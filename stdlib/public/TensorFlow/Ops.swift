@@ -63,10 +63,22 @@ public extension Tensor where Scalar : Numeric {
 extension Tensor : VectorNumeric where Scalar : Numeric {
   public typealias ScalarElement = Scalar
   public typealias Dimensionality = TensorShape
+  public typealias Magnitude = Tensor
+  
+  @inlinable
+  var magnitude: Tensor {
+    return abs(self)
+  }
 
   @inlinable @inline(__always)
   public init(dimensionality: TensorShape, repeating repeatedValue: Scalar) {
     self.init(shape: dimensionality, repeating: repeatedValue)
+  }
+  
+  /// Returns the given number unchanged.
+  @inlinable
+  prefix static func + (_ x: Tensor) -> Tensor {
+    return x
   }
 
   /// Adds two tensors and produces their sum.
@@ -132,20 +144,18 @@ extension Tensor : VectorNumeric where Scalar : Numeric {
   public static func * (lhs: Tensor, rhs: Scalar) -> Tensor {
     return lhs * Tensor(rhs)
   }
-}
-
-public extension Tensor where Scalar : Numeric {
+  
   /// Adds two tensors and stores the result in the left-hand-side variable.
   /// - Note: `+=` supports broadcasting.
   @inlinable @inline(__always)
-  static func += (lhs: inout Tensor, rhs: Tensor) {
+  public static func += (lhs: inout Tensor, rhs: Tensor) {
     lhs = lhs + rhs
   }
 
   /// Adds the scalar to every scalar of the tensor and stores the result in the
   /// left-hand-side variable.
   @inlinable @inline(__always)
-  static func += (lhs: inout Tensor, rhs: Scalar) {
+  public static func += (lhs: inout Tensor, rhs: Scalar) {
     lhs = lhs + rhs
   }
 
@@ -153,14 +163,14 @@ public extension Tensor where Scalar : Numeric {
   /// left-hand-side variable.
   /// - Note: `-=` supports broadcasting.
   @inlinable @inline(__always)
-  static func -= (lhs: inout Tensor, rhs: Tensor) {
+  public static func -= (lhs: inout Tensor, rhs: Tensor) {
     lhs = lhs - rhs
   }
 
   /// Subtracts the scalar from every scalar of the tensor and stores the result
   /// in the left-hand-side variable.
   @inlinable @inline(__always)
-  static func -= (lhs: inout Tensor, rhs: Scalar) {
+  public static func -= (lhs: inout Tensor, rhs: Scalar) {
     lhs = lhs - rhs
   }
 
@@ -168,17 +178,19 @@ public extension Tensor where Scalar : Numeric {
   /// variable.
   /// - Note: `*=` supports broadcasting.
   @inlinable @inline(__always)
-  static func *= (lhs: inout Tensor, rhs: Tensor) {
+  public static func *= (lhs: inout Tensor, rhs: Tensor) {
     lhs = lhs * rhs
   }
 
   /// Multiplies the scalar with every scalar of the tensor and stores the
   /// result in the left-hand-side variable.
   @inlinable @inline(__always)
-  static func *= (lhs: inout Tensor, rhs: Scalar) {
+  public static func *= (lhs: inout Tensor, rhs: Scalar) {
     lhs = lhs * rhs
   }
+}
 
+public extension Tensor where Scalar : Numeric {
   /// Returns the quotient of dividing the first tensor by the second.
   /// - Note: `/` supports broadcasting.
   @inlinable @inline(__always)
@@ -573,7 +585,7 @@ public extension Tensor {
 @_exported import func Glibc.powf
 #endif
 
-public extension Tensor where Scalar : SignedNumeric {
+public extension Tensor : SignedNumeric where Scalar : SignedNumeric {
   /// Computes the negation of the specified tensor element-wise.
   @inlinable @inline(__always)
   @differentiable(reverse, adjoint: _adjointNegate(_:originalValue:seed:))

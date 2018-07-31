@@ -22,9 +22,9 @@
 
 /// A type that represents an unranked vector space. Values of this type are
 /// elements in this vector space and with a specific dimensionality.
-public protocol VectorNumeric {
+public protocol VectorNumeric : Numeric {
   /// The type of scalars in the real vector space.
-  associatedtype ScalarElement
+  associatedtype ScalarElement : Numeric
 
   /// The type whose values specifies the dimensionality of an object in the
   /// real vector space.
@@ -44,40 +44,43 @@ public protocol VectorNumeric {
   ///   - repeatedValue: the value repeat for the specified dimensionality
   init(dimensionality: Dimensionality, repeating repeatedValue: ScalarElement)
 
-  static func + (lhs: Self, rhs: Self) -> Self
   static func + (lhs: Self, rhs: ScalarElement) -> Self
   static func + (lhs: ScalarElement, rhs: Self) -> Self
 
-  static func - (lhs: Self, rhs: Self) -> Self
   static func - (lhs: Self, rhs: ScalarElement) -> Self
   static func - (lhs: ScalarElement, rhs: Self) -> Self
 
-  static func * (lhs: Self, rhs: Self) -> Self
   static func * (lhs: Self, rhs: ScalarElement) -> Self
   static func * (lhs: ScalarElement, rhs: Self) -> Self
 }
 
 public extension VectorNumeric {
+  @inlinable
   static func + (lhs: Self, rhs: ScalarElement) -> Self {
     return lhs + Self(rhs)
   }
 
+  @inlinable
   static func + (lhs: ScalarElement, rhs: Self) -> Self {
     return Self(lhs) + rhs
   }
 
+  @inlinable
   static func - (lhs: Self, rhs: ScalarElement) -> Self {
     return lhs - Self(rhs)
   }
 
+  @inlinable
   static func - (lhs: ScalarElement, rhs: Self) -> Self {
     return Self(lhs) - rhs
   }
 
+  @inlinable
   static func * (lhs: Self, rhs: ScalarElement) -> Self {
     return lhs * Self(rhs)
   }
 
+  @inlinable
   static func * (lhs: ScalarElement, rhs: Self) -> Self {
     return Self(lhs) * rhs
   }
