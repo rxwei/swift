@@ -64,6 +64,10 @@ extension Tensor : VectorNumeric where Scalar : Numeric {
   public typealias ScalarElement = Scalar
   public typealias Dimensionality = TensorShape
   public typealias Magnitude = Tensor
+
+  public init?<T : BinaryInteger>(exactly source: T) {
+    self = Tensor(Tensor<T>(source))
+  }
   
   @inlinable
   var magnitude: Tensor {
@@ -76,8 +80,8 @@ extension Tensor : VectorNumeric where Scalar : Numeric {
   }
   
   /// Returns the given number unchanged.
-  @inlinable
-  prefix static func + (_ x: Tensor) -> Tensor {
+  @inlinable @inline(__always)
+  public prefix static func + (_ x: Tensor) -> Tensor {
     return x
   }
 
@@ -585,11 +589,11 @@ public extension Tensor {
 @_exported import func Glibc.powf
 #endif
 
-public extension Tensor : SignedNumeric where Scalar : SignedNumeric {
+extension Tensor : SignedNumeric where Scalar : SignedNumeric {
   /// Computes the negation of the specified tensor element-wise.
   @inlinable @inline(__always)
   @differentiable(reverse, adjoint: _adjointNegate(_:originalValue:seed:))
-  static prefix func - (rhs: Tensor) -> Tensor {
+  public static prefix func - (rhs: Tensor) -> Tensor {
     return Raw.neg(rhs)
   }
 }
