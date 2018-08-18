@@ -498,6 +498,18 @@ TensorTests.testAllBackends("Unbroadcast2") {
               z.array)
 }
 
+TensorTests.testAllBackends("Pad") {
+  let x: Tensor<Float> = [[1, 2, 3], [4, 5, 6]]
+  let y = x.padded(
+    with: 0, sizesPerDimension: [(before: 1, after: 1), (before: 2, after: 2)])
+  expectEqual(ShapedArray<Float>(shape: [4, 7],
+                                 scalars: [0, 0, 0, 0, 0, 0, 0,
+                                           0, 0, 1, 2, 3, 0, 0,
+                                           0, 0, 4, 5, 6, 0, 0,
+                                           0, 0, 0, 0, 0, 0, 0]),
+              y.array)
+}
+
 // TODO: Merge all rank/shape getter tests into one when we support code motion
 // to avoid sends.
 

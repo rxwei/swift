@@ -1099,7 +1099,8 @@ public extension Tensor where Scalar : Numeric {
     let nonEqualIndices = paddedShape.elementsNotEqual(shapeTensor)
     let broadcastIndices = Raw.where_(nonEqualIndices).flattened()
     let unbroadcasted: Tensor = Raw.sum(
-      self, reductionIndices: Tensor<Int32>(broadcastIndices), keepDims: false)
+      self, reductionIndices: Tensor<Int32>(broadcastIndices), keepDims: false
+    )
     return Raw.reshape(unbroadcasted, shape: otherShape)
   }
 
@@ -1120,13 +1121,15 @@ public extension Tensor where Scalar : Numeric {
 
 public extension Tensor where Scalar : Numeric {
   /// Returns a padded tensor according to the specified padding sizes.
+  // FIXME: Remove @autoclosure when send/receive can be prevented by code
+  // motion.
   @inlinable @inline(__always)
   func padded(
-    forSizes sizes: @autoclosure () -> [(before: Int32, after: Int32)],
-    with value: Scalar = 0
+    with value: Scalar = 0,
+    sizesPerDimension sizes: @autoclosure () -> [(before: Int32, after: Int32)]
   ) -> Tensor {
+    let sizes = sizes()
     let paddings: TensorHandle<Int32> = _TFHoistable {
-      let sizes = sizes()
       return Tensor<Int32>(
         shape: [Int32(sizes.count), 2],
         scalars: sizes.flatMap { [$0.before, $0.after] }
@@ -1134,8 +1137,9 @@ public extension Tensor where Scalar : Numeric {
     }
     return Raw.padV2(
       self,
-      paddings: Tensor<Int32>(handle: _TFSend(paddings)),
-      constantValues: Tensor(value))
+      paddings: Tensor<Int32>(handle: paddings).toAccelerator(),
+      constantValues: Tensor(value)
+    )
   }
 }
 
@@ -1236,13 +1240,13 @@ public extension Tensor {
       // TODO: The horrendous mess of type-casting is necessary due to GPU ops
       // (Gather, ScatterNd) not accepting Int32 for particular inputs. Refactor
       // if possible.
-      let lowerBound = Tensor<Int32>([bounds.lowerBound])
+      let lowerBound = Tensor<Int32>(bounds.lowerBound).rankLifted()
       let remainingZeros: Tensor<Int32> = Raw.fill(
         dims: (rankTensor - 1).rankLifted(), value: Tensor<Int32>(0))
       let startIndices = lowerBound.concatenated(with: remainingZeros)
 
-      let boundSize = Tensor<Int32>([bounds.upperBound])
-        - lowerBound - Tensor<Int32>(Tensor<Float>(shapeTensor)[0])
+      let boundSize = Tensor<Int32>(bounds.upperBound).rankLifted()
+        - lowerBound - shapeTensor[0]
       let scatterIndices: Tensor<Int32> = [[0]]
       let offset: Tensor<Int32> = Tensor<Int32>(
         Raw.scatterNd(
@@ -1274,7 +1278,8 @@ public extension Tensor {
     return Raw.slice(
       self,
       begin: lowerBoundsTensor,
-      size: Tensor<Int32>(upperBounds) - lowerBoundsTensor)
+      size: Tensor<Int32>(upperBounds) - lowerBoundsTensor
+    )
   }
 }
 
@@ -1368,7 +1373,8 @@ public extension Tensor where Scalar : BinaryFloatingPoint {
       self,
       filter: filter,
       strides: [strides.0, strides.1, strides.2, strides.3],
-      padding: padding.raw)
+      padding: padding.raw
+    )
   }
 
   /// Computes a 2-D max pooling, with the specified kernel sizes, strides, and
@@ -1393,7 +1399,8 @@ public extension Tensor where Scalar : BinaryFloatingPoint {
       self,
       ksize: Tensor<Int32>(kernelSize),
       strides: Tensor<Int32>(strides),
-      padding: padding.raw)
+      padding: padding.raw
+    )
   }
 
   /// Computes a 2-D average pooling, with the specified kernel sizes, strides,
@@ -1418,6 +1425,7 @@ public extension Tensor where Scalar : BinaryFloatingPoint {
       value: self,
       ksize: [kernelSize.0, kernelSize.1, kernelSize.2, kernelSize.3],
       strides: [strides.0, strides.1, strides.2, strides.3],
-      padding: padding.raw)
+      padding: padding.raw
+    )
   }
 }
