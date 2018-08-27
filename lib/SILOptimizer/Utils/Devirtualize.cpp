@@ -18,6 +18,8 @@
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/SubstitutionMap.h"
 #include "swift/AST/Types.h"
+// SWIFT_ENABLE_TENSORFLOW
+#include "swift/SIL/FormalLinkage.h"
 #include "swift/SIL/OptimizationRemark.h"
 #include "swift/SIL/SILDeclRef.h"
 #include "swift/SIL/SILFunction.h"
@@ -935,20 +937,19 @@ devirtualizeWitnessMethod(ApplySite AI, SILFunction *F,
   return std::make_pair(ResultValue, SAI);
 }
 
-static bool canDevirtualizeWitnessMethod(ApplySite AI) {
+/// SWIFT_ENABLE_TENSORFLOW
+static bool canDevirtualizeWitnessMethod(WitnessMethodInst *WMI) {
   SILFunction *F;
   SILWitnessTable *WT;
 
-  auto *WMI = cast<WitnessMethodInst>(AI.getCallee());
-
   std::tie(F, WT) =
-    AI.getModule().lookUpFunctionInWitnessTable(WMI->getConformance(),
-                                                WMI->getMember());
+    WMI->getModule().lookUpFunctionInWitnessTable(WMI->getConformance(),
+                                                  WMI->getMember());
 
   if (!F)
     return false;
 
-  if (AI.getFunction()->isSerialized()) {
+  if (WMI->getFunction()->isSerialized()) {
     // function_ref inside fragile function cannot reference a private or
     // hidden symbol.
     if (!F->hasValidLinkageForFragileRef())
@@ -958,24 +959,46 @@ static bool canDevirtualizeWitnessMethod(ApplySite AI) {
   return true;
 }
 
+/// SWIFT_ENABLE_TENSORFLOW
+static bool canDevirtualizeWitnessMethod(ApplySite AI) {
+  return canDevirtualizeWitnessMethod(cast<WitnessMethodInst>(AI.getCallee()));
+}
+
+/// SWIFT_ENABLE_TENSORFLOW
 /// In the cases where we can statically determine the function that
 /// we'll call to, replace an apply of a witness_method with an apply
 /// of a function_ref, returning the new apply.
-DevirtualizationResult
-swift::tryDevirtualizeWitnessMethod(ApplySite AI, OptRemark::Emitter *ORE) {
-  if (!canDevirtualizeWitnessMethod(AI))
-    return std::make_pair(nullptr, FullApplySite());
+SILFunction *
+swift::tryDevirtualizeWitnessMethod(WitnessMethodInst *WMI,
+                                    OptRemark::Emitter *ORE) {
+  if (!canDevirtualizeWitnessMethod(WMI))
+    return nullptr;
 
   SILFunction *F;
   SILWitnessTable *WT;
 
-  auto *WMI = cast<WitnessMethodInst>(AI.getCallee());
-
   std::tie(F, WT) =
-    AI.getModule().lookUpFunctionInWitnessTable(WMI->getConformance(),
-                                                WMI->getMember());
+    WMI->getModule().lookUpFunctionInWitnessTable(WMI->getConformance(),
+                                                  WMI->getMember());
+  
+  // Fix linkage.
+  auto Linkage = getSILLinkage(
+     getDeclLinkage(WMI->getConformance().getConcrete()->getDeclContext()
+         ->getAsNominalTypeOrNominalTypeExtensionContext()), NotForDefinition);
+  for (auto &entry : WT->getEntries())
+    if (entry.getKind() == SILWitnessTable::WitnessKind::Method)
+      entry.getMethodWitness().Witness->setLinkage(Linkage);
 
-  return devirtualizeWitnessMethod(AI, F, WMI->getConformance(), ORE);
+  return F;
+}
+
+/// SWIFT_ENABLE_TENSORFLOW
+DevirtualizationResult
+swift::tryDevirtualizeWitnessMethod(ApplySite AI, OptRemark::Emitter *ORE) {
+  auto *WMI = cast<WitnessMethodInst>(AI.getCallee());
+  if (auto *F = tryDevirtualizeWitnessMethod(WMI, ORE))
+    return devirtualizeWitnessMethod(AI, F, WMI->getConformance(), ORE);
+  return std::make_pair(nullptr, FullApplySite());
 }
 
 //===----------------------------------------------------------------------===//

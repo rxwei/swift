@@ -81,6 +81,9 @@ DevirtualizationResult
 tryDevirtualizeClassMethod(FullApplySite AI, SILValue ClassInstance,
                            OptRemark::Emitter *ORE,
                            bool isEffectivelyFinalMethod = false);
+/// SWIFT_ENABLE_TENSORFLOW
+SILFunction *
+tryDevirtualizeWitnessMethod(WitnessMethodInst *WMI, OptRemark::Emitter *ORE);
 DevirtualizationResult
 tryDevirtualizeWitnessMethod(ApplySite AI, OptRemark::Emitter *ORE);
 }
