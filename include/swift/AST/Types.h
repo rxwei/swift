@@ -2587,6 +2587,44 @@ getSILFunctionLanguage(SILFunctionTypeRepresentation rep) {
 
   llvm_unreachable("Unhandled SILFunctionTypeRepresentation in switch.");
 }
+  
+// SWIFT_ENABLE_TENSORFLOW
+enum class DifferentiationMode : uint8_t {
+  Forward,
+  Reverse,
+};
+
+/// Differentiability
+///
+/// enum DifferentiationParameter {
+///   case `self`
+///   case index(Int)
+/// }
+///
+/// enum Differentiablity {
+///   case forward(wrt: [DifferentiationParameter])
+///   case reverse(wrt: [DifferentiationParameter])
+/// }
+///
+class Differentiability {
+private:
+  DifferentiationMode mode;
+  llvm::SmallBitVector parameterIndices;
+  llvm::SmallBitVector sourceIndices;
+
+public:
+  DifferentiationMode getMode() {
+    return mode;
+  }
+  
+  const llvm::SmallBitVector &getParameterIndices() const {
+    return parameterIndices;
+  }
+  
+  const llvm::SmallBitVector &getSourceIndices() const {
+    return sourceIndices;
+  }
+};
 
 /// AnyFunctionType - A function type has a single input and result, but
 /// these types may be tuples, for example:
