@@ -87,13 +87,13 @@ struct SILReverseAutoDiffIndices {
   unsigned source;
   /// Indices of independent parameters to differentiate with respect to.
   llvm::SmallBitVector parameters;
-  
+
   /// Creates a set of AD indices from the given source index and a bit vector
   /// representing parameter indices.
   /*implicit*/ SILReverseAutoDiffIndices(unsigned source,
                                          llvm::SmallBitVector parameters)
     : source(source), parameters(parameters) {}
-  
+
   /// Creates a set of AD indices from the given source index and an array of
   /// parameter indices. Elements in `parameters` must be acending integers.
   /*implicit*/ SILReverseAutoDiffIndices(unsigned source,
@@ -127,10 +127,10 @@ enum class SILGradientFlags : unsigned {
   /// The gradient function is seedable, i.e. able to take a back-propagated
   /// adjoint value as the last parameter.
   Seedable = 1 << 0,
-  
+
   /// The gradient function is preserving the result of the original function.
   PreservingResult = 1 << 1,
-  
+
   /// The adjoint computation is "delayed". We say that the adjoint computation
   /// is delayed when when it's returned as a thunk.
   Delayed = 1 << 2
@@ -206,6 +206,112 @@ struct SILReverseAutoDiffConfig {
   bool operator==(const SILReverseAutoDiffConfig &other) const {
     return indices == other.indices &&
            options.toRaw() == other.options.toRaw();
+  }
+};
+
+/// A conceptual cotangent space representing the type of the adjoint.
+class CotangentSpace {
+public:
+  /// A cotangent space kind.
+  enum class Kind {
+    /// `Builtin.FP<...>`.
+    BuiltinRealScalar,
+    /// A type that conforms to `FloatingPoint`.
+    RealScalar,
+    /// A type that conforms to `VectorNumeric` where the associated
+    /// `ScalarElement` conforms to `FloatingPoint`.
+    RealVector,
+    /// A product of cotangent spaces as a struct.
+    ProductStruct,
+    /// A product of cotangent spaces as a tuple.
+    ProductTuple,
+    /// A sum of cotangent spaces.
+    Sum
+  };
+
+private:
+  Kind kind;
+  union Value {
+    // BuiltinRealScalar
+    BuiltinFloatType *builtinFPType;
+    // RealScalar or RealVector
+    NominalTypeDecl *realNominalType;
+    // ProductStruct
+    StructDecl *structDecl;
+    // ProductTuple
+    TupleType *tupleType;
+    // Sum
+    EnumDecl *enumDecl;
+
+    Value(BuiltinFloatType *builtinFP) : builtinFPType(builtinFP) {}
+    Value(NominalTypeDecl *nominal) : realNominalType(nominal) {}
+    Value(StructDecl *structDecl) : structDecl(structDecl) {}
+    Value(TupleType *tupleType) : tupleType(tupleType) {}
+    Value(EnumDecl *enumDecl) : enumDecl(enumDecl) {}
+  } value;
+
+  CotangentSpace(Kind kind, Value value)
+      : kind(kind), value(value) {}
+
+public:
+  CotangentSpace() = delete;
+
+  static CotangentSpace
+  getBuiltinRealScalarSpace(BuiltinFloatType *builtinFP) {
+    return {Kind::BuiltinRealScalar, builtinFP};
+  }
+  static CotangentSpace getRealScalarSpace(NominalTypeDecl *typeDecl) {
+    return {Kind::RealScalar, typeDecl};
+  }
+  static CotangentSpace getRealVectorSpace(NominalTypeDecl *typeDecl) {
+    return {Kind::RealVector, typeDecl};
+  }
+  static CotangentSpace getProductStruct(StructDecl *structDecl) {
+    return {Kind::ProductStruct, structDecl};
+  }
+  static CotangentSpace getProductTuple(TupleType *tupleTy) {
+    return {Kind::ProductTuple, tupleTy};
+  }
+  static CotangentSpace getSum(EnumDecl *enumDecl) {
+    return {Kind::Sum, enumDecl};
+  }
+
+  bool isBuiltinRealScalarSpace() const {
+    return kind == Kind::BuiltinRealScalar;
+  }
+  bool isRealScalarSpace() const { return kind == Kind::RealScalar; }
+  bool isRealVectorSpace() const { return kind == Kind::RealVector; }
+  bool isProductStruct() const { return kind == Kind::ProductStruct; }
+  bool isProductTuple() const { return kind == Kind::ProductTuple; }
+
+  Kind getKind() const { return kind; }
+  BuiltinFloatType *getBuiltinRealScalarSpace() const {
+    assert(kind == Kind::BuiltinRealScalar);
+    return value.builtinFPType;
+  }
+  NominalTypeDecl *getRealScalarSpace() const {
+    assert(kind == Kind::RealScalar);
+    return value.realNominalType;
+  }
+  NominalTypeDecl *getRealVectorSpace() const {
+    assert(kind == Kind::RealVector);
+    return value.realNominalType;
+  }
+  NominalTypeDecl *getRealScalarOrVectorSpace() const {
+    assert(kind == Kind::RealScalar || kind == Kind::RealVector);
+    return value.realNominalType;
+  }
+  StructDecl *getProductStruct() const {
+    assert(kind == Kind::ProductStruct);
+    return value.structDecl;
+  }
+  TupleType *getProductTuple() const {
+    assert(kind == Kind::ProductTuple);
+    return value.tupleType;
+  }
+  EnumDecl *getSum() const {
+    assert(kind == Kind::Sum);
+    return value.enumDecl;
   }
 };
 

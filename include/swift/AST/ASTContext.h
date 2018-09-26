@@ -944,6 +944,9 @@ bool fixDeclarationObjCName(InFlightDiagnostic &diag, ValueDecl *decl,
                             Optional<ObjCSelector> targetNameOpt,
                             bool ignoreImpliedName = false);
 
+/// Returns a type representing the cotangent space.
+Optional<CotangentSpace> getCotangentSpace(CanType type) const;
+
 } // end namespace swift
 
 #endif
