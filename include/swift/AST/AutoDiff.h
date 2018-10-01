@@ -78,6 +78,40 @@ public:
   }
 };
 
+class AnyFunctionType;
+
+class Differentiability {
+private:
+  AutoDiffMode mode;
+  bool wrtSelf;
+  llvm::SmallBitVector parameterIndices;
+  llvm::SmallBitVector resultIndices;
+
+public:
+  Differentiability(AutoDiffMode mode,
+                    bool wrtSelf,
+                    llvm::SmallBitVector parameterIndices,
+                    llvm::SmallBitVector resultIndices);
+
+  Differentiability(AutoDiffMode mode, AnyFunctionType *type);
+
+  AutoDiffMode getMode() const {
+    return mode;
+  }
+
+  bool isWithRespectToSelf() const {
+    return wrtSelf;
+  }
+
+  const llvm::SmallBitVector &getParameterIndices() const {
+    return parameterIndices;
+  }
+
+  const llvm::SmallBitVector &getResultIndices() const {
+    return resultIndices;
+  }
+};
+
 /// SIL-level automatic differentiation indices. Consists of a source index,
 /// i.e. index of the dependent result to differentiate from, and parameter
 /// indices, i.e. index of independent parameters to differentiate with

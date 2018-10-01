@@ -4446,13 +4446,16 @@ Expected<Type> ModuleFile::getTypeChecked(TypeID TID) {
     TypeID inputID;
     TypeID resultID;
     uint8_t rawRepresentation;
-    bool autoClosure, noescape, throws;
+    // SWIFT_ENABLE_TENSORFLOW
+    bool autoClosure, noescape, throws, differentiable;
 
     decls_block::FunctionTypeLayout::readRecord(scratch, inputID, resultID,
                                                 rawRepresentation,
                                                 autoClosure,
                                                 noescape,
-                                                throws);
+                                                // SWIFT_ENABLE_TENSORFLOW
+                                                throws,
+                                                differentiable);
     auto representation = getActualFunctionTypeRepresentation(rawRepresentation);
     if (!representation.hasValue()) {
       error();
@@ -4460,7 +4463,8 @@ Expected<Type> ModuleFile::getTypeChecked(TypeID TID) {
     }
     
     auto info = FunctionType::ExtInfo(*representation, autoClosure, noescape,
-                                      throws);
+                                      // SWIFT_ENABLE_TENSORFLOW
+                                      throws, differentiable);
 
     auto inputTy = getTypeChecked(inputID);
     if (!inputTy)
@@ -4794,6 +4798,8 @@ Expected<Type> ModuleFile::getTypeChecked(TypeID TID) {
     uint8_t rawRepresentation;
     bool pseudogeneric = false;
     bool noescape;
+    // SWIFT_ENABLE_TENSORFLOW
+    bool differentiable;
     bool hasErrorResult;
     unsigned numParams;
     unsigned numYields;
@@ -4807,6 +4813,8 @@ Expected<Type> ModuleFile::getTypeChecked(TypeID TID) {
                                              rawRepresentation,
                                              pseudogeneric,
                                              noescape,
+                                             // SWIFT_ENABLE_TENSORFLOW
+                                             differentiable,
                                              hasErrorResult,
                                              numParams,
                                              numYields,

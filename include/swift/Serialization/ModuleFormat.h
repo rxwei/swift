@@ -55,7 +55,8 @@ const uint16_t VERSION_MAJOR = 0;
 /// describe what change you made. The content of this comment isn't important;
 /// it just ensures a conflict if two people change the module format.
 /// Don't worry about adhering to the 80-column limit for this line.
-const uint16_t VERSION_MINOR = 433; // Last change: add graph_op serialization
+// SWIFT_ENABLE_TENSORFLOW
+const uint16_t VERSION_MINOR = 434; // Last change: @differentiable in ExtInfo
 
 using DeclIDField = BCFixed<31>;
 
@@ -738,7 +739,9 @@ namespace decls_block {
     FunctionTypeRepresentationField, // representation
     BCFixed<1>,  // auto-closure?
     BCFixed<1>,  // noescape?
-    BCFixed<1>   // throws?
+    // SWIFT_ENABLE_TENSORFLOW
+    BCFixed<1>,  // throws?
+    BCFixed<1>   // differentiable?
   >;
 
   using MetatypeTypeLayout = BCRecordLayout<
@@ -803,6 +806,8 @@ namespace decls_block {
     SILFunctionTypeRepresentationField, // representation
     BCFixed<1>,            // pseudogeneric?
     BCFixed<1>,            // noescape?
+    // SWIFT_ENABLE_TENSORFLOW
+    BCFixed<1>,            // differentiable?
     BCFixed<1>,            // error result?
     BCFixed<30>,           // number of parameters
     BCFixed<30>,           // number of yields

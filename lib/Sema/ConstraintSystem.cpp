@@ -1616,7 +1616,9 @@ resolveOverloadForDeclWithSpecialTypeCheckingSemantics(ConstraintSystem &CS,
         FunctionType::ExtInfo(FunctionType::Representation::Swift,
                               /*autoclosure*/ false,
                               /*noescape*/ true,
-                              /*throws*/ true));
+                              // SWIFT_ENABLE_TENSORFLOW
+                              /*throws*/ true,
+                              /*differentiable*/ false));
     TupleTypeElt argTupleElts[] = {
       TupleTypeElt(noescapeClosure),
       TupleTypeElt(bodyClosure, CS.getASTContext().getIdentifier("do")),
@@ -1627,7 +1629,9 @@ resolveOverloadForDeclWithSpecialTypeCheckingSemantics(ConstraintSystem &CS,
       FunctionType::ExtInfo(FunctionType::Representation::Swift,
                             /*autoclosure*/ false,
                             /*noescape*/ false,
-                            /*throws*/ true));
+                            // SWIFT_ENABLE_TENSORFLOW
+                            /*throws*/ true,
+                            /*differentiable*/ false));
     openedFullType = refType;
     return true;
   }
@@ -1648,7 +1652,9 @@ resolveOverloadForDeclWithSpecialTypeCheckingSemantics(ConstraintSystem &CS,
         FunctionType::ExtInfo(FunctionType::Representation::Swift,
                               /*autoclosure*/ false,
                               /*noescape*/ true,
-                              /*throws*/ true));
+                              // SWIFT_ENABLE_TENSORFLOW
+                              /*throws*/ true,
+                              /*differentiable*/ false));
     TupleTypeElt argTupleElts[] = {
       TupleTypeElt(existentialTy),
       TupleTypeElt(bodyClosure, CS.getASTContext().getIdentifier("do")),
@@ -1658,7 +1664,9 @@ resolveOverloadForDeclWithSpecialTypeCheckingSemantics(ConstraintSystem &CS,
       FunctionType::ExtInfo(FunctionType::Representation::Swift,
                             /*autoclosure*/ false,
                             /*noescape*/ false,
-                            /*throws*/ true));
+                            // SWIFT_ENABLE_TENSORFLOW
+                            /*throws*/ true,
+                            /*differentiable*/ false));
     openedFullType = refType;
     return true;
   }

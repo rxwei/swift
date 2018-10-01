@@ -2090,6 +2090,10 @@ bool Parser::parseTypeAttribute(TypeAttributes &Attributes, bool justChecking) {
       return false;
     }
     break;
+  // SWIFT_ENABLE_TENSORFLOW
+  case TAK_differentiable:
+    Attributes.setAttr(TAK_differentiable, Loc);
+    break;
   case TAK_out:
   case TAK_in:
   case TAK_owned:
