@@ -536,22 +536,6 @@ makeConcrete(Type type) {
   return { type };
 }
 
-// SWIFT_ENABLE_TENSORFLOW
-template <class P, class... Gs>
-static BuiltinGenericSignatureBuilder::LambdaGenerator
-makeBoundGeneric(NominalTypeDecl *decl, const P &parentGenerator,
-                 const Gs & ...genericParamGenerators) {
-  return {
-    [=](BuiltinGenericSignatureBuilder &builder) -> Type {
-      Type parent = parentGenerator.build(builder);
-      Type genParams[] = {
-        genericParamGenerators.build(builder)...
-      };
-      return BoundGenericType::get(decl, parent, genParams);
-    }
-  };
-}
-
 static BuiltinGenericSignatureBuilder::ParameterGenerator
 makeGenericParam(unsigned index = 0) {
   return { index };
@@ -580,6 +564,23 @@ makeBoundGenericType(NominalTypeDecl *decl,
         argumentGenerators.build(builder)...
       };
       return BoundGenericType::get(decl, Type(), args);
+    }
+  };
+}
+
+// SWIFT_ENABLE_TENSORFLOW
+template <class... Ts, class R>
+static BuiltinGenericSignatureBuilder::LambdaGenerator
+makeFunctionType(AnyFunctionType::ExtInfo extInfo, const R &resultGenerator,
+                 const Ts & ...argumentGenerators) {
+  return {
+    [=](BuiltinGenericSignatureBuilder &builder) -> Type {
+      FunctionType::Param params[] = {
+        FunctionType::Param(
+            argumentGenerators.build(builder))...
+      };
+      return FunctionType::get(params, resultGenerator.build(builder))
+          ->withExtInfo(extInfo);
     }
   };
 }
@@ -974,8 +975,7 @@ static ValueDecl *getAutoDiffCreateTape(ASTContext &Context, Identifier Id) {
   // <T> () -> (Swift._AutoDiffTape<T>)
   BuiltinGenericSignatureBuilder builder(Context, 1);
   auto *tapeDecl = Context.get_AutoDiffTapeDecl();
-  builder.setResult(
-    makeBoundGeneric(tapeDecl, makeConcrete(Type()), makeGenericParam()));
+  builder.setResult(makeBoundGenericType(tapeDecl, makeGenericParam()));
   return builder.build(Id);
 }
 
@@ -984,7 +984,7 @@ static ValueDecl *getAutoDiffPushToTape(ASTContext &Context, Identifier Id) {
   BuiltinGenericSignatureBuilder builder(Context, 1);
   auto *tapeDecl = Context.get_AutoDiffTapeDecl();
   auto T = makeGenericParam();
-  builder.addParameter(makeBoundGeneric(tapeDecl, makeConcrete(Type()), T));
+  builder.addParameter(makeBoundGenericType(tapeDecl, makeConcrete(Type()), T));
   builder.addParameter(T);
   builder.addParameter(makeConcrete(BuiltinIntegerType::getWordType(Context)));
   builder.setResult(makeConcrete(Context.TheEmptyTupleType));
@@ -996,7 +996,7 @@ static ValueDecl *getAutoDiffPopFromTape(ASTContext &Context, Identifier Id) {
   BuiltinGenericSignatureBuilder builder(Context, 1);
   auto *tapeDecl = Context.get_AutoDiffTapeDecl();
   auto T = makeGenericParam();
-  builder.addParameter(makeBoundGeneric(tapeDecl, makeConcrete(Type()), T));
+  builder.addParameter(makeBoundGenericType(tapeDecl, makeConcrete(Type()), T));
   builder.addParameter(makeConcrete(BuiltinIntegerType::getWordType(Context)));
   builder.setResult(T);
   return builder.build(Id);
@@ -1007,9 +1007,41 @@ static ValueDecl *getAutoDiffDestroyTape(ASTContext &Context, Identifier Id) {
   BuiltinGenericSignatureBuilder builder(Context, 1);
   auto *tapeDecl = Context.get_AutoDiffTapeDecl();
   builder.addParameter(
-    makeBoundGeneric(tapeDecl, makeConcrete(Type()), makeGenericParam()));
+      makeBoundGenericType(tapeDecl, makeConcrete(Type()), makeGenericParam()));
   builder.setResult(makeConcrete(Context.TheEmptyTupleType));
   return builder.build(Id);
+}
+
+static ValueDecl *getAutoDiffGetOriginalFunction(ASTContext &Context,
+                                                 Identifier id) {
+  llvm_unreachable("Original function getter is not implemented");
+}
+
+static ValueDecl *getAutoDiffGetJVPFunction(ASTContext &Context,
+                                            Identifier id) {
+  llvm_unreachable("JVP function is not implemented");
+}
+
+static ValueDecl *getAutoDiffGetVJPFunction(ASTContext &Context,
+                                            Identifier id) {
+  llvm_unreachable("VJP function is not implemented");
+}
+
+static ValueDecl *getAutoDiffGetPrimalFunction(ASTContext &Context,
+                                               Identifier id) {
+  // <T: Differentiable, R: Differentiable>
+  // (@autodiff (T) -> R) -> (R, R.CotangentVector) -> T.CotangentVector
+  BuiltinGenericSignatureBuilder builder(Context, 1);
+  auto T = makeGenericParam(), R = makeGenericParam();
+  auto extInfo = FunctionType::ExtInfo()
+      .withDifferentiability(FunctionType::Differentiability::Reverse);
+  builder.addParameter(makeFunctionType(extInfo, R, T));
+  llvm_unreachable("Primal function getter is not implemented");
+}
+
+static ValueDecl *getAutoDiffGetAdjointFunction(ASTContext &Context,
+                                                Identifier id) {
+  llvm_unreachable("Adjoint function getter is not implemented");
 }
 
 static ValueDecl *getPoundAssert(ASTContext &Context, Identifier Id) {
@@ -1932,6 +1964,16 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
     return getTensorFlowSend(Context, Id);
   case BuiltinValueKind::TensorFlowReceive:
     return getTensorFlowReceive(Context, Id);
+  case BuiltinValueKind::AutoDiffGetOriginalFunction:
+    return getAutoDiffGetOriginalFunction(Context, Id);
+  case BuiltinValueKind::AutoDiffGetJVPFunction:
+    return getAutoDiffGetJVPFunction(Context, Id);
+  case BuiltinValueKind::AutoDiffGetVJPFunction:
+    return getAutoDiffGetVJPFunction(Context, Id);
+  case BuiltinValueKind::AutoDiffGetPrimalFunction:
+    return getAutoDiffGetPrimalFunction(Context, Id);
+  case BuiltinValueKind::AutoDiffGetAdjointFunction:
+    return getAutoDiffGetAdjointFunction(Context, Id);
   case BuiltinValueKind::AutoDiffCreateTape:
     return getAutoDiffCreateTape(Context, Id);
   case BuiltinValueKind::AutoDiffPushToTape:

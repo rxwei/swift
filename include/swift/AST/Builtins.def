@@ -544,6 +544,23 @@ BUILTIN_MISC_OPERATION(TensorFlowSend, "tensorflowSend", "", Special)
 BUILTIN_MISC_OPERATION(TensorFlowReceive, "tensorflowReceive", "", Special)
 
 // Automatic differentiation builtins.
+
+/// autodiffGetOriginalFunction takes an @autodiff function, and returns the
+/// original function.
+BUILTIN_MISC_OPERATION(AutoDiffGetOriginalFunction, "autodiffGetOriginalFunction", "", Special)
+/// autodiffGetJVPFunction takes an @autodiff function, and returns the
+/// Jacobian-vector product function.
+BUILTIN_MISC_OPERATION(AutoDiffGetJVPFunction, "autodiffGetJVPFunction", "", Special)
+/// autodiffGetVJPFunction takes an @autodiff function, and returns the
+/// Jacobian-vector product function.
+BUILTIN_MISC_OPERATION(AutoDiffGetVJPFunction, "autodiffGetVJPFunction", "", Special)
+/// autodiffGetPrimalFunction takes an @autodiff function, and returns the
+/// primal function.
+BUILTIN_MISC_OPERATION(AutoDiffGetPrimalFunction, "autodiffGetPrimalFunction", "", Special)
+/// autodiffGetAdjointFunction takes an @autodiff function, and returns the
+/// adjoint function.
+BUILTIN_MISC_OPERATION(AutoDiffGetAdjointFunction, "autodiffGetAdjointFunction", "", Special)
+
 /// autodiffCreateTape has type <T> () -> Builtin.AutoDiffTape<T>.
 BUILTIN_MISC_OPERATION(AutoDiffCreateTape, "autodiffCreateTape", "", Special)
 /// autodiffPushToTape has type <T> (Builtin.AutoDiffTape<T>, T, Builtin.Word) -> ().
