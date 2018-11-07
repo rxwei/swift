@@ -54,7 +54,6 @@ extension Tensor where Scalar : Numeric {
   static func _adjointAdd(
     _ x: Tensor, _ y: Tensor, originalValue: Tensor, seed: Tensor
   ) -> (Tensor, Tensor) {
-    let seed = seed.broadcast(like: originalValue)
     return (seed.unbroadcast(like: x), seed.unbroadcast(like: y))
   }
 
@@ -62,7 +61,6 @@ extension Tensor where Scalar : Numeric {
   static func _adjointSubtract(
     _ x: Tensor, _ y: Tensor, originalValue: Tensor, seed: Tensor
   ) -> (Tensor, Tensor) {
-    let seed = seed.broadcast(like: originalValue)
     return (seed.unbroadcast(like: x), 0 - seed.unbroadcast(like: y))
   }
 
@@ -110,7 +108,7 @@ extension Tensor where Scalar : SignedNumeric {
   static func _adjointNegate(
     _ x: Tensor, originalValue: Tensor, seed: Tensor
   ) -> Tensor {
-    return -seed.broadcast(like: originalValue)
+    return -seed
   }
 }
 
@@ -213,8 +211,7 @@ func _adjointMatmul<Scalar : Numeric>(
   _ left: Tensor<Scalar>, _ right: Tensor<Scalar>,
   originalValue: Tensor<Scalar>, seed: Tensor<Scalar>
 ) -> (Tensor<Scalar>, Tensor<Scalar>) {
-  let bcSeed = seed.broadcast(like: originalValue)
-  return (matmul(bcSeed, right.transposed()), matmul(left.transposed(), bcSeed))
+  return (matmul(seed, right.transposed()), matmul(left.transposed(), seed))
 }
 
 // TODO: We have to define a custom adjoint on • because AD can't yet
@@ -234,7 +231,6 @@ extension Tensor {
   func _adjointTransposed(
     _ permutations: Tensor<Int32>, originalValue: Tensor, seed: Tensor
   ) -> Tensor {
-    let seed = seed.broadcast(like: originalValue)
     return seed.transposed(withPermutations: permutations)
   }
 }
@@ -248,7 +244,6 @@ extension Tensor {
   func _adjointReshaped(
     toShape newShape: Tensor<Int32>, originalValue: Tensor, seed: Tensor
   ) -> Tensor {
-    let seed = seed.broadcast(like: originalValue)
     return seed.reshaped(toShape: shapeTensor)
   }
 
@@ -256,7 +251,6 @@ extension Tensor {
   func _adjointExpandingShape(
     at shapeIndex: Int32, originalValue: Tensor, seed: Tensor
   ) -> Tensor {
-    let seed = seed.broadcast(like: originalValue)
     return seed.squeezingShape(at: shapeIndex)
   }
 }
