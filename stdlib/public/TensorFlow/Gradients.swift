@@ -253,6 +253,11 @@ extension Tensor {
   ) -> Tensor {
     return seed.squeezingShape(at: shapeIndex)
   }
+
+  @inlinable
+  func _adjointScalarized(_: Scalar, seed: Scalar) -> Tensor {
+    return Tensor(seed).broadcast(like: self)
+  }
 }
 
 //===----------------------------------------------------------------------===//

@@ -839,6 +839,7 @@ public extension Tensor {
   /// Reshape to scalar.
   /// - Precondition: The tensor has exactly one scalar.
   @inlinable
+  @differentiable(reverse, wrt: (self), adjoint: _adjointScalarized)
   func scalarized() -> Scalar {
     return _TFGetScalarOrDie(reshaped(to: []).handle)
   }
