@@ -7646,28 +7646,42 @@ public:
 class AutoDiffFunctionExtractInst :
     public InstructionBase<SILInstructionKind::AutoDiffFunctionExtractInst,
                            SingleValueInstruction> {
+public:
+  enum Extractee {
+    Original,
+    JVP,
+    VJP
+  };
+
 private:
   /// The kind of the associated function to extract.
-  AutoDiffAssociatedFunctionKind associatedFunctionKind;
-  /// The differentiation order.
+  Extractee extractee;
+  /// The differentiation order. A zero value is only legal when the extractee
+  /// is the original function.
   unsigned differentiationOrder;
   /// The list containing the `@autodiff` function operand.
   FixedOperandList<1> operands;
 
   static SILType
-  getAssociatedFunctionType(SILValue function,
-                            AutoDiffAssociatedFunctionKind kind,
-                            unsigned differentiationOrder,
-                            SILModule &module);
+  getExtracteeType(SILValue function, Extractee extractee,
+                   unsigned differentiationOrder, SILModule &module);
 
 public:
   explicit AutoDiffFunctionExtractInst(
-      SILModule &module, SILDebugLocation debugLoc,
-      AutoDiffAssociatedFunctionKind associatedFunctionKind,
+      SILModule &module, SILDebugLocation debugLoc, Extractee extractee,
       unsigned differentiationOrder, SILValue theFunction);
 
+  Extractee getExtractee() const {
+    return extractee;
+  }
+
   AutoDiffAssociatedFunctionKind getAssociatedFunctionKind() const {
-    return associatedFunctionKind;
+    assert(extractee != Original);
+    switch (extractee) {
+    case Original: llvm_unreachable("Cannot be Original");
+    case JVP: return AutoDiffAssociatedFunctionKind::JVP;
+    case VJP: return AutoDiffAssociatedFunctionKind::VJP;
+    }
   }
 
   SILValue getFunctionOperand() const {

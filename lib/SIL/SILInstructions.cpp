@@ -667,30 +667,42 @@ getAssociatedFunction(unsigned differentiationOrder,
 }
 
 SILType AutoDiffFunctionExtractInst::
-getAssociatedFunctionType(SILValue function,
-                          AutoDiffAssociatedFunctionKind kind,
-                          unsigned differentiationOrder,
-                          SILModule &module) {
+getExtracteeType(SILValue function, Extractee extractee,
+                 unsigned differentiationOrder, SILModule &module) {
   auto fnTy = function->getType().castTo<SILFunctionType>();
   assert(fnTy->getExtInfo().isDifferentiable());
   auto originalFnTy =
       fnTy->getWithExtInfo(fnTy->getExtInfo().withDifferentiability(
           FunctionTypeDifferentiability::None));
-  // FIXME: Get indices from the @autodiff function type.
-  auto assocFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
-      SmallBitVector(originalFnTy->getNumParameters(), true),
-      differentiationOrder, kind, module,
-      LookUpConformanceInModule(module.getSwiftModule()));
-  return SILType::getPrimitiveObjectType(assocFnTy);
+  CanSILFunctionType resultFnTy;
+  switch (extractee) {
+  case Original:
+    assert(differentiationOrder == 0);
+    resultFnTy = originalFnTy;
+    break;
+  case JVP:
+    resultFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
+        SmallBitVector(originalFnTy->getNumParameters(), true),
+        differentiationOrder, AutoDiffAssociatedFunctionKind::JVP, module,
+         LookUpConformanceInModule(module.getSwiftModule()));
+    break;
+  case VJP:
+    resultFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
+        SmallBitVector(originalFnTy->getNumParameters(), true),
+        differentiationOrder, AutoDiffAssociatedFunctionKind::VJP, module,
+        LookUpConformanceInModule(module.getSwiftModule()));
+    break;
+  }
+  return SILType::getPrimitiveObjectType(resultFnTy);
 }
 
 AutoDiffFunctionExtractInst::AutoDiffFunctionExtractInst(
     SILModule &module, SILDebugLocation debugLoc,
-    AutoDiffAssociatedFunctionKind associatedFunctionKind,
-    unsigned differentiationOrder, SILValue theFunction)
-    : InstructionBase(debugLoc, getAssociatedFunctionType(
-          theFunction, associatedFunctionKind, differentiationOrder, module)),
-      associatedFunctionKind(associatedFunctionKind),
+    Extractee extractee, unsigned differentiationOrder, SILValue theFunction)
+    : InstructionBase(debugLoc,
+                      getExtracteeType(theFunction, extractee,
+                                       differentiationOrder, module)),
+      extractee(extractee),
       differentiationOrder(differentiationOrder),
       operands(this, theFunction) {
 }
