@@ -273,6 +273,11 @@ getOrCreateReabstractionThunk(CanSILFunctionType thunkType,
                               CanSILFunctionType fromType,
                               CanSILFunctionType toType,
                               IsSerialized_t Serialized) {
+  // SWIFT_ENABLE_TENSORFLOW
+  assert(!thunkType->isDifferentiable() &&
+         !fromType->isDifferentiable() &&
+         !toType->isDifferentiable());
+
   // The reference to the thunk is likely @noescape, but declarations are always
   // escaping.
   auto thunkDeclType =

@@ -3122,6 +3122,23 @@ static ManagedValue createThunk(SILGenFunction &SGF,
   auto sourceType = fn.getType().castTo<SILFunctionType>();
   auto expectedType = expectedTL.getLoweredType().castTo<SILFunctionType>();
 
+  // If the source type is differentiable, emit a reabstraction thunk for the
+  // original function and every associated function, and then form a new
+  // @autodiff function.
+  if (sourceType->isDifferentiable()) {
+    assert(expectedType->isDifferentiable());
+    // Drop differentiability from source and expected types.
+    auto sourceTypeNondiff = sourceType->getWithExtInfo(
+        sourceType->getExtInfo().withDifferentiable(false));
+    auto expectedTypeNondiff = expectedType->getWithExtInfo(
+        expectedType->getExtInfo().withDifferentiable(false));
+    // Create a reabstraction thunk for the original function.
+    auto fnVal = fn.getValue();
+    auto *orig = SGF.B.createAutoDiffFunctionExtractOriginal(loc, fnVal);
+    createThunk(SGF, loc, ManagedValue::forUnmanaged(orig), <#AbstractionPattern inputOrigType#>, <#CanAnyFunctionType inputSubstType#>, <#AbstractionPattern outputOrigType#>, <#CanAnyFunctionType outputSubstType#>, <#const TypeLowering &expectedTL#>)
+    // Create a reabstraction thunk for every associated function.
+  }
+
   // We can't do bridging here.
   assert(expectedType->getLanguage() ==
          fn.getType().castTo<SILFunctionType>()->getLanguage() &&
