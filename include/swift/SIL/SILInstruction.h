@@ -7659,6 +7659,9 @@ public:
     Extractee(AutoDiffAssociatedFunctionKind kind);
     explicit Extractee(StringRef name);
     operator innerty() const { return rawValue; }
+
+    llvm::Optional<AutoDiffAssociatedFunctionKind>
+    getAssociatedFunctionKindOpt() const;
   };
 
 private:

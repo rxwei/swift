@@ -1254,6 +1254,36 @@ public:
   }
 
   void checkAutoDiffFunctionInst(AutoDiffFunctionInst *adfi) {
+    // If the associated function comes from a reabstraction thunk, then it is
+    // impossible to determine the type of the associated function from the
+    // type of the original function, because we also need to know the
+    // abstraction pattern that the reabstraction made. So we currently
+    // calculate the wrong type, causing a mismatch. This function works around
+    // the mismatch by disabling the type match assertion for reabstracted
+    // @autodiff functions.
+    //
+    // TODO: Eventually, we should fix this. Perhaps add the associated
+    // function types to @autodiff SILFunctionTypes.
+    std::function<bool(SILValue)> associatedFunctionTypeMismatchOkay;
+    associatedFunctionTypeMismatchOkay = [&](SILValue assocFn) -> bool {
+      // First unwrap any function conversion instructions hiding the underlying
+      // function.
+      if (auto *tttfi = dyn_cast<ThinToThickFunctionInst>(assocFn))
+        return associatedFunctionTypeMismatchOkay(tttfi->getCallee());
+      if (auto *cfi = dyn_cast<ConvertFunctionInst>(assocFn))
+        return associatedFunctionTypeMismatchOkay(cfi->getConverted());
+      if (auto *cetn = dyn_cast<ConvertEscapeToNoEscapeInst>(assocFn))
+        return associatedFunctionTypeMismatchOkay(cetn->getOperand());
+
+      // Reabstraction happens by partially applying a reabstraction thunk, so
+      // allow mismatches when we see a partially applied reabstraction thunk.
+      auto *partialApply = dyn_cast<PartialApplyInst>(assocFn);
+      if (!partialApply)
+        return false;
+      return partialApply->getCalleeFunction()->isThunk() ==
+             IsThunk_t::IsReabstractionThunk;
+    };
+
     require(adfi->getDifferentiationOrder() > 0,
             "The differentiation order must be non-zero");
     auto origTy =
@@ -1273,7 +1303,9 @@ public:
             adfi->getParameterIndices(), /*resultIndex*/ 0, order,
             AutoDiffAssociatedFunctionKind::JVP, F.getModule(),
             LookUpConformanceInModule(F.getModule().getSwiftModule()));
-        require(expectedJVPType == jvpType, "Unexpected JVP function type");
+        require(expectedJVPType == jvpType ||
+                    associatedFunctionTypeMismatchOkay(pair.first),
+                "Unexpected JVP function type");
         auto vjpType = pair.second->getType().getAs<SILFunctionType>();
         require(vjpType, "The VJP function must have a function type");
         require(!vjpType->isDifferentiable(),
@@ -1282,7 +1314,9 @@ public:
             adfi->getParameterIndices(), /*resultIndex*/ 0, order,
             AutoDiffAssociatedFunctionKind::VJP, F.getModule(),
             LookUpConformanceInModule(F.getModule().getSwiftModule()));
-        require(expectedVJPType == vjpType, "Unexpected VJP function type");
+        require(expectedVJPType == vjpType ||
+                    associatedFunctionTypeMismatchOkay(pair.second),
+                "Unexpected VJP function type");
       }
     }
   }

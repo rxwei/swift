@@ -688,6 +688,18 @@ AutoDiffFunctionExtractInst::Extractee::Extractee(StringRef string) {
   rawValue = *result;
 }
 
+llvm::Optional<AutoDiffAssociatedFunctionKind>
+AutoDiffFunctionExtractInst::Extractee::getAssociatedFunctionKindOpt() const {
+  switch (rawValue) {
+  case Original:
+    return None;
+  case JVP:
+    return {AutoDiffAssociatedFunctionKind::JVP};
+  case VJP:
+    return {AutoDiffAssociatedFunctionKind::VJP};
+  }
+}
+
 SILType AutoDiffFunctionExtractInst::
 getExtracteeType(SILValue function, Extractee extractee,
                  unsigned differentiationOrder, SILModule &module) {
@@ -695,25 +707,34 @@ getExtracteeType(SILValue function, Extractee extractee,
   assert(fnTy->getExtInfo().isDifferentiable());
   auto originalFnTy =
       fnTy->getWithExtInfo(fnTy->getExtInfo().withDifferentiable(false));
-  CanSILFunctionType resultFnTy;
-  switch (extractee) {
-  case Extractee::Original:
+
+  auto associatedFunctionKindOpt = extractee.getAssociatedFunctionKindOpt();
+  if (!associatedFunctionKindOpt) {
+    assert(extractee == Extractee::Original);
     assert(differentiationOrder == 0);
-    resultFnTy = originalFnTy;
-    break;
-  case Extractee::JVP:
-    resultFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
-        fnTy->getDifferentiationParameterIndices(), /*resultIndex*/ 0,
-        differentiationOrder, AutoDiffAssociatedFunctionKind::JVP, module,
-        LookUpConformanceInModule(module.getSwiftModule()));
-    break;
-  case Extractee::VJP:
-    resultFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
-        fnTy->getDifferentiationParameterIndices(), /*resultIndex*/ 0,
-        differentiationOrder, AutoDiffAssociatedFunctionKind::VJP, module,
-        LookUpConformanceInModule(module.getSwiftModule()));
-    break;
+    return SILType::getPrimitiveObjectType(originalFnTy);
   }
+  auto kind = *associatedFunctionKindOpt;
+
+  // SILGen constructs some `autodiff_function` instructions whose associated
+  // function types are impossible to correctly calculate using just the type.
+  // Work around this by getting the type from the associated function value
+  // itself.
+  // See the comment in `SILVerifier::checkAutoDiffFunctionInst` for more
+  // information.
+  ArrayRef<Operand> associatedFunctions;
+  if (auto *adfi = dyn_cast<AutoDiffFunctionInst>(function))
+    associatedFunctions = adfi->getAssociatedFunctions();
+  auto associatedFunctionIndex =
+    autodiff::getOffsetForAutoDiffAssociatedFunction(differentiationOrder,
+                                                     kind) - 1;
+  if (associatedFunctionIndex < associatedFunctions.size())
+    return associatedFunctions[associatedFunctionIndex].get()->getType();
+
+  auto resultFnTy = originalFnTy->getAutoDiffAssociatedFunctionType(
+        fnTy->getDifferentiationParameterIndices(), /*resultIndex*/ 0,
+        differentiationOrder, kind, module,
+        LookUpConformanceInModule(module.getSwiftModule()));
   return SILType::getPrimitiveObjectType(resultFnTy);
 }
 
