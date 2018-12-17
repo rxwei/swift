@@ -1264,25 +1264,25 @@ public:
     //
     // TODO: Eventually, we should fix this. Perhaps add the associated
     // function types to @autodiff SILFunctionTypes.
-    std::function<bool(SILValue)> associatedFunctionTypeMismatchOkay;
-    associatedFunctionTypeMismatchOkay = [&](SILValue assocFn) -> bool {
-      // First unwrap any function conversion instructions hiding the underlying
-      // function.
-      if (auto *tttfi = dyn_cast<ThinToThickFunctionInst>(assocFn))
-        return associatedFunctionTypeMismatchOkay(tttfi->getCallee());
-      if (auto *cfi = dyn_cast<ConvertFunctionInst>(assocFn))
-        return associatedFunctionTypeMismatchOkay(cfi->getConverted());
-      if (auto *cetn = dyn_cast<ConvertEscapeToNoEscapeInst>(assocFn))
-        return associatedFunctionTypeMismatchOkay(cetn->getOperand());
-
-      // Reabstraction happens by partially applying a reabstraction thunk, so
-      // allow mismatches when we see a partially applied reabstraction thunk.
-      auto *partialApply = dyn_cast<PartialApplyInst>(assocFn);
-      if (!partialApply)
-        return false;
-      return partialApply->getCalleeFunction()->isThunk() ==
-             IsThunk_t::IsReabstractionThunk;
-    };
+//    std::function<bool(SILValue)> associatedFunctionTypeMismatchOkay;
+//    associatedFunctionTypeMismatchOkay = [&](SILValue assocFn) -> bool {
+//      // First unwrap any function conversion instructions hiding the underlying
+//      // function.
+//      if (auto *tttfi = dyn_cast<ThinToThickFunctionInst>(assocFn))
+//        return associatedFunctionTypeMismatchOkay(tttfi->getCallee());
+//      if (auto *cfi = dyn_cast<ConvertFunctionInst>(assocFn))
+//        return associatedFunctionTypeMismatchOkay(cfi->getConverted());
+//      if (auto *cetn = dyn_cast<ConvertEscapeToNoEscapeInst>(assocFn))
+//        return associatedFunctionTypeMismatchOkay(cetn->getOperand());
+//
+//      // Reabstraction happens by partially applying a reabstraction thunk, so
+//      // allow mismatches when we see a partially applied reabstraction thunk.
+//      auto *partialApply = dyn_cast<PartialApplyInst>(assocFn);
+//      if (!partialApply)
+//        return false;
+//      return partialApply->getCalleeFunction()->isThunk() ==
+//             IsThunk_t::IsReabstractionThunk;
+//    };
 
     require(adfi->getDifferentiationOrder() > 0,
             "The differentiation order must be non-zero");
@@ -1303,8 +1303,7 @@ public:
             adfi->getParameterIndices(), /*resultIndex*/ 0, order,
             AutoDiffAssociatedFunctionKind::JVP, F.getModule(),
             LookUpConformanceInModule(F.getModule().getSwiftModule()));
-        require(expectedJVPType == jvpType ||
-                    associatedFunctionTypeMismatchOkay(pair.first),
+        require(expectedJVPType == jvpType,
                 "Unexpected JVP function type");
         auto vjpType = pair.second->getType().getAs<SILFunctionType>();
         require(vjpType, "The VJP function must have a function type");
@@ -1314,8 +1313,8 @@ public:
             adfi->getParameterIndices(), /*resultIndex*/ 0, order,
             AutoDiffAssociatedFunctionKind::VJP, F.getModule(),
             LookUpConformanceInModule(F.getModule().getSwiftModule()));
-        require(expectedVJPType == vjpType ||
-                    associatedFunctionTypeMismatchOkay(pair.second),
+        llvm::outs() << "!!!!!!!!!Expected VJP type: " << expectedVJPType << '\n';
+        require(expectedVJPType == vjpType,
                 "Unexpected VJP function type");
       }
     }
