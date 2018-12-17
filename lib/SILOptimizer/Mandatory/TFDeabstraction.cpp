@@ -150,6 +150,7 @@ namespace {
   private:
     void logCurrentState(const char *name, bool isDetailed);
     void inlineCalls();
+    void foldPartialApplications();
     void simplifyTensorOperands();
 
     void promoteToSSA(ArrayRef<AllocStackInst *> allocs);
@@ -333,6 +334,15 @@ void TFDeabstraction::inlineCalls() {
 
     // Okay, erase the function from the module.
     module.eraseFunction(callee);
+  }
+}
+
+void TFDeabstraction::foldPartialApplications() {
+  SmallPtrSet<PartialApplyInst *, 8> visitedPartialApps;
+  SmallVector<ApplyInst *, 8> apps;
+  for (auto &bb : fn) {
+    for (auto &inst : bb) {
+    }
   }
 }
 
