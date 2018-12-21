@@ -352,24 +352,27 @@ class StructDecl;
 class TupleType;
 class EnumDecl;
 
-/// A type that represents the tangent space of a differentiable type.
-class TangentSpace {
+/// The kind of vector spaces in a differentiable manifold that host
+/// derivative values.
+enum class DerivativeVectorSpaceKind {
+  Tangent, Cotangent
+};
+
+/// A type that represents a vector space.
+class VectorSpace {
 public:
   /// A tangent space kind.
   enum class Kind {
     /// `Builtin.FP<...>`.
-    BuiltinRealScalar,
-    /// A type that conforms to `FloatingPoint`.
-    RealScalar,
-    /// A type that conforms to `VectorNumeric` where the associated
-    /// `ScalarElement` conforms to `FloatingPoint`.
-    RealVector,
-    /// A product of tangent spaces as a struct.
-    ProductStruct,
-    /// A product of tangent spaces as a tuple.
-    ProductTuple,
-    /// A sum of tangent spaces.
-    Sum
+    BuiltinFloat,
+    /// A type that conforms to `VectorNumeric`.
+    Vector,
+    /// A product of vector spaces as a struct.
+    Struct,
+    /// A product of vector spaces as a tuple.
+    Tuple,
+    /// A union of vector spaces.
+    Union
   };
 
 private:
@@ -377,52 +380,47 @@ private:
   union Value {
     // BuiltinRealScalar
     BuiltinFloatType *builtinFPType;
-    // RealScalar or RealVector
-    NominalTypeDecl *realNominalType;
-    // ProductStruct
-    StructDecl *structDecl;
-    // ProductTuple
+    // RealVector
+    NominalType *realNominalType;
+    // Struct
+    StructType *structType;
+    // Tuple
     TupleType *tupleType;
-    // Sum
-    EnumDecl *enumDecl;
+    // Union
+    EnumType *enumType;
 
     Value(BuiltinFloatType *builtinFP) : builtinFPType(builtinFP) {}
-    Value(NominalTypeDecl *nominal) : realNominalType(nominal) {}
-    Value(StructDecl *structDecl) : structDecl(structDecl) {}
+    Value(NominalType *nominal) : realNominalType(nominal) {}
+    Value(StructType *structDecl) : structDecl(structDecl) {}
     Value(TupleType *tupleType) : tupleType(tupleType) {}
-    Value(EnumDecl *enumDecl) : enumDecl(enumDecl) {}
+    Value(EnumType *enumDecl) : enumDecl(enumDecl) {}
   } value;
 
-  TangentSpace(Kind kind, Value value)
-      : kind(kind), value(value) {}
+  VectorSpace(Kind kind, Value value) : kind(kind), value(value) {}
 
 public:
-  TangentSpace() = delete;
+  VectorSpace() = delete;
 
-  static TangentSpace
+  static VectorSpace
   getBuiltinRealScalarSpace(BuiltinFloatType *builtinFP) {
     return {Kind::BuiltinRealScalar, builtinFP};
   }
-  static TangentSpace getRealScalarSpace(NominalTypeDecl *typeDecl) {
-    return {Kind::RealScalar, typeDecl};
+  static VectorSpace getRealVectorSpace(NominalType *typeDecl) {
+    return {Kind::Vector, typeDecl};
   }
-  static TangentSpace getRealVectorSpace(NominalTypeDecl *typeDecl) {
-    return {Kind::RealVector, typeDecl};
+  static VectorSpace getProductStruct(StructType *structDecl) {
+    return {Kind::Struct, structDecl};
   }
-  static TangentSpace getProductStruct(StructDecl *structDecl) {
-    return {Kind::ProductStruct, structDecl};
+  static VectorSpace getProductTuple(TupleType *tupleTy) {
+    return {Kind::Tuple, tupleTy};
   }
-  static TangentSpace getProductTuple(TupleType *tupleTy) {
-    return {Kind::ProductTuple, tupleTy};
-  }
-  static TangentSpace getSum(EnumDecl *enumDecl) {
-    return {Kind::Sum, enumDecl};
+  static VectorSpace getSum(EnumType *enumDecl) {
+    return {Kind::Union, enumDecl};
   }
 
   bool isBuiltinRealScalarSpace() const {
     return kind == Kind::BuiltinRealScalar;
   }
-  bool isRealScalarSpace() const { return kind == Kind::RealScalar; }
   bool isRealVectorSpace() const { return kind == Kind::RealVector; }
   bool isProductStruct() const { return kind == Kind::ProductStruct; }
   bool isProductTuple() const { return kind == Kind::ProductTuple; }
@@ -432,16 +430,12 @@ public:
     assert(kind == Kind::BuiltinRealScalar);
     return value.builtinFPType;
   }
-  NominalTypeDecl *getRealScalarSpace() const {
-    assert(kind == Kind::RealScalar);
-    return value.realNominalType;
-  }
   NominalTypeDecl *getRealVectorSpace() const {
     assert(kind == Kind::RealVector);
     return value.realNominalType;
   }
   NominalTypeDecl *getRealScalarOrVectorSpace() const {
-    assert(kind == Kind::RealScalar || kind == Kind::RealVector);
+    assert(kind == Kind::RealVector);
     return value.realNominalType;
   }
   StructDecl *getProductStruct() const {

@@ -15,6 +15,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "swift/AST/ASTContext.h"
+// SWIFT_ENABLE_TENSORFLOW
+#include "swift/AST/AutoDiff.h"
 #include "ForeignRepresentationInfo.h"
 #include "SubstitutionMapStorage.h"
 #include "swift/AST/ConcreteDeclRef.h"
@@ -381,8 +383,9 @@ FOR_KNOWN_FOUNDATION_TYPES(CACHE_FOUNDATION_DECL)
   llvm::DenseMap<UUID, ArchetypeType *> OpenedExistentialArchetypes;
 
   // SWIFT_ENABLE_TENSORFLOW
-  /// A cache of tangent spaces per type.
-  llvm::DenseMap<CanType, Optional<TangentSpace>> TangentSpaces;
+  /// A cache of derivative vector spaces per type.
+  llvm::DenseMap<std::pair<CanType, DerivativeVectorSpaceKind>,
+                 Optional<VectorSpace>> DerivativeVectorSpaces;
 
   /// For uniquifying `AutoDiffParameterIndices` allocations.
   llvm::FoldingSet<AutoDiffParameterIndices> AutoDiffParameterIndicesSet;
@@ -5195,39 +5198,36 @@ LayoutConstraint LayoutConstraint::getLayoutConstraint(LayoutConstraintKind Kind
 }
 
 // SWIFT_ENABLE_TENSORFLOW
-Optional<TangentSpace> ASTContext::getTangentSpace(CanType type,
-                                                   ModuleDecl *module) {
-  auto lookup = getImpl().TangentSpaces.find(type);
-  if (lookup != getImpl().TangentSpaces.end())
+Optional<VectorSpace> ASTContext::getDerivativeVectorSpace(
+    DerivativeVectorSpaceKind kind, CanType type, ModuleDecl *module) {
+  auto lookup = getImpl().DerivativeVectorSpaces.find({type, kind});
+  if (lookup != getImpl().DerivativeVectorSpaces.end())
     return lookup->getSecond();
   // A helper that is used to cache the computed tangent space for the
   // specified type and retuns the same tangent space.
-  auto cache = [&](Optional<TangentSpace> tangentSpace) {
-    getImpl().TangentSpaces.insert({type, tangentSpace});
-    return tangentSpace;
+  auto cache = [&](Optional<VectorSpace> vs) {
+    getImpl().DerivativeVectorSpaces.insert({{type, kind}, vs});
+    return vs;
   };
   // `Builtin.FP<...>` is a builtin real scalar space.
   if (auto *fpType = type->getAs<BuiltinFloatType>())
-    return cache(TangentSpace::getBuiltinRealScalarSpace(fpType));
-  // Look up conformance to `FloatingPoint`.
-  auto *fpProto = getProtocol(KnownProtocolKind::FloatingPoint);
-  if (auto maybeFPConf = module->lookupConformance(type, fpProto)) {
-    auto *typeDecl = type->getAnyNominal();
-    assert(typeDecl);
-    return cache(TangentSpace::getRealScalarSpace(typeDecl));
-  }
+    return cache(VectorSpace::getBuiltinRealScalarSpace(fpType));
   // Look up conformance to `Differentiable`.
   auto *diffableProto = getProtocol(KnownProtocolKind::Differentiable);
   if (auto maybeDiffableConf = module->lookupConformance(type, diffableProto)) {
-    auto tangentLookup =
-        diffableProto->lookupDirect(getIdentifier("TangentVector"));
-    auto *tangentAssocDecl = cast<AssociatedTypeDecl>(tangentLookup[0]);
-    auto subMap = type->getMemberSubstitutionMap(module, tangentAssocDecl);
-    auto tangent = tangentAssocDecl->getDeclaredInterfaceType().subst(subMap);
-    auto *tangentDecl = tangent->getAnyNominal();
-    assert(tangentDecl &&
-           "Tangent must be a nominal type because it has protocol contraints");
-    return cache(TangentSpace::getRealVectorSpace(tangentDecl));
+    Identifier vsName;
+    switch (kind) {
+    case Id_TangentVector:
+      vsName = Id_TangentVector;
+      break;
+    case Id_CotangentVector:
+      vsName = Id_CotangentVector;
+      break;
+    }
+    auto memberType = DependentMemberType::get(type, vsName);
+    auto assocTy = memberType->substBaseType(module, type);
+    assert(assocTy);
+    return cache(VectorSpace::getRealVectorSpace(tangentDecl));
   }
   // Nominal types can be either a struct or an enum.
   if (auto *nominal = type->getAnyNominal()) {
@@ -5237,13 +5237,13 @@ Optional<TangentSpace> ASTContext::getTangentSpace(CanType type,
       if (structDecl->getFormalAccess() >= AccessLevel::Public &&
           !structDecl->getAttrs().hasAttribute<FixedLayoutAttr>())
         return cache(None);
-      auto allMembersHaveTangentSpace =
+      auto allMembersHaveVectorSpace =
           llvm::all_of(structDecl->getStoredProperties(), [&](VarDecl *v) {
-            return (bool)getTangentSpace(v->getType()->getCanonicalType(),
+            return (bool)getVectorSpace(v->getType()->getCanonicalType(),
                                          module);
           });
-      if (allMembersHaveTangentSpace)
-        return cache(TangentSpace::getProductStruct(structDecl));
+      if (allMembersHaveVectorSpace)
+        return cache(VectorSpace::getProductStruct(structDecl));
     }
     // Frozen enum types, all of whose payloads have a tangent space, are a
     // sum of the product of payloads in each case.
@@ -5253,25 +5253,25 @@ Optional<TangentSpace> ASTContext::getTangentSpace(CanType type,
         return cache(None);
       if (enumDecl->isIndirect())
         return cache(None);
-      auto allMembersHaveTangentSpace =
+      auto allMembersHaveVectorSpace =
         llvm::all_of(enumDecl->getAllCases(), [&](EnumCaseDecl *cd) {
           return llvm::all_of(cd->getElements(), [&](EnumElementDecl *eed) {
             return llvm::all_of(*eed->getParameterList(), [&](ParamDecl *pd) {
               return (bool)
-                  getTangentSpace(pd->getType()->getCanonicalType(), module);
+                  getVectorSpace(pd->getType()->getCanonicalType(), module);
             });
           });
         });
-      if (allMembersHaveTangentSpace)
-        return cache(TangentSpace::getSum(enumDecl));
+      if (allMembersHaveVectorSpace)
+        return cache(VectorSpace::getSum(enumDecl));
     }
   }
   // Tuple types, each of whose elements has a tangent space, are a product of
   // those tangent space.
   if (TupleType *tupleType = type->getAs<TupleType>())
     if (llvm::all_of(tupleType->getElementTypes(), [&](Type t) {
-            return (bool)getTangentSpace(t->getCanonicalType(), module); }))
-      return cache(TangentSpace::getProductTuple(tupleType));
+            return (bool)getVectorSpace(t->getCanonicalType(), module); }))
+      return cache(VectorSpace::getProductTuple(tupleType));
   // Otherwise, the type does not have a tangent space. That is, it does not
   // support differentiation.
   return cache(None);

@@ -104,7 +104,8 @@ namespace swift {
   class VarDecl;
   class UnifiedStatsReporter;
   // SWIFT_ENABLE_TENSORFLOW
-  class TangentSpace;
+  class VectorSpace;
+  class DerivativeVectorSpaceKind;
 
   enum class KnownProtocolKind : uint8_t;
 
@@ -953,9 +954,11 @@ public:
   }
 
   // SWIFT_ENABLE_TENSORFLOW
-  /// Compute the tangent space of this manifold, if the given type represents a
-  /// differentiable manifold.
-  Optional<TangentSpace> getTangentSpace(CanType type, ModuleDecl *module);
+  /// Compute the derivative vector space of this type. If this type is not a
+  /// differentiable manifold, return `None`.
+  Optional<VectorSpace> getDerivativeVectorSpace(DerivativeVectorSpaceKind kind,
+                                                 CanType type,
+                                                 ModuleDecl *module);
 
 private:
   friend Decl;

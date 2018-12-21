@@ -39,6 +39,7 @@ IDENTIFIER(CoreGraphics)
 IDENTIFIER(CoreMedia)
 IDENTIFIER(CGFloat)
 IDENTIFIER(CoreFoundation)
+IDENTIFIER(CotangentVector)
 IDENTIFIER(CVarArg)
 IDENTIFIER(Darwin)
 IDENTIFIER(dealloc)
@@ -108,6 +109,8 @@ IDENTIFIER_WITH_NAME(SwiftObject, "_TtCs12_SwiftObject")
 // Pre-stable ABI uses un-mangled name for SwiftObject.
 IDENTIFIER(SwiftObject)
 #endif
+// SWIFT_ENABLE_TENSORFLOW
+IDENTIFIER(TangentVector)
 IDENTIFIER(to)
 IDENTIFIER(toRaw)
 IDENTIFIER(Type)
