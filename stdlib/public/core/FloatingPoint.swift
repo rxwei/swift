@@ -1823,7 +1823,7 @@ extension FloatingPoint {
   @_transparent
   // SWIFT_ENABLE_TENSORFLOW
   @differentiable(wrt: (self), vjp: _vjpSquareRoot
-                  where Self : Differentiable, Self == Self.CotangentVector)
+                  where Self : Differentiable, Self == Self.Gradient)
   public func squareRoot( ) -> Self {
     var lhs = self
     lhs.formSquareRoot( )
@@ -1846,7 +1846,7 @@ extension FloatingPoint {
   @_transparent
   /// SWIFT_ENABLE_TENSORFLOW
   @differentiable(wrt: (self, .0, .1), vjp: _vjpAddingProduct
-                  where Self : Differentiable, Self == Self.CotangentVector)
+                  where Self : Differentiable, Self == Self.Gradient)
   public func addingProduct(_ lhs: Self, _ rhs: Self) -> Self {
     var addend = self
     addend.addProduct(lhs, rhs)
@@ -2023,8 +2023,7 @@ extension FloatingPoint {
 }
 
 /// SWIFT_ENABLE_TENSORFLOW
-extension FloatingPoint where Self : Differentiable,
-                              Self == Self.CotangentVector {
+extension FloatingPoint where Self : Differentiable, Self == Self.Gradient {
   /// The vector-Jacobian product function of `addingProduct`. Returns the
   /// original result and pullback of `addingProduct` with respect to `self`,
   /// `lhs` and `rhs`.

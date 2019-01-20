@@ -56,38 +56,45 @@ public protocol ShapedVectorNumeric : VectorNumeric {
   init(repeating repeatedValue: Scalar, shape: Shape)
 }
 
-/// A type that mathematically represents a differentiable manifold whose
-/// tangent spaces are finite-dimensional.
+/// A type that mathematically represents a differentiable manifold.
 public protocol Differentiable {
-  /// The tangent bundle of this differentiable manifold.
-  associatedtype TangentVector : Differentiable & AdditiveArithmetic
-    where TangentVector.TangentVector == TangentVector,
-          TangentVector.CotangentVector == CotangentVector
+  /// The type of directional derivatives. In Riemannian geometry (mathematics),
+  /// this type represents the tangent bundle of the differentiable manifold
+  /// (`Self`).
+  associatedtype Derivative : Differentiable, AdditiveArithmetic
+    where Derivative.Derivative == Derivative,
+          Derivative.Gradient == Gradient
 
-  /// The cotangent bundle of this differentiable manifold.
-  associatedtype CotangentVector : Differentiable & AdditiveArithmetic
-    where CotangentVector.TangentVector == CotangentVector,
-          CotangentVector.CotangentVector == TangentVector
+  /// The type of gradients. In Riemannian geometry (mathematics), This type
+  /// represents the cotangent bundle of the differentiable manifold (`Self`).
+  associatedtype Gradient : Differentiable, AdditiveArithmetic
+    where Gradient.Derivative == Gradient,
+          Gradient.Gradient == Derivative
 
   /// The type of all differentiable variables in this type.
   associatedtype AllDifferentiableVariables
     where AllDifferentiableVariables : Differentiable,
           AllDifferentiableVariables.AllDifferentiableVariables ==
               AllDifferentiableVariables,
-          AllDifferentiableVariables.TangentVector == TangentVector,
-          AllDifferentiableVariables.CotangentVector == CotangentVector
+          AllDifferentiableVariables.Derivative == Derivative,
+          AllDifferentiableVariables.Gradient == Gradient
 
   /// All differentiable variables in this type.
   var allDifferentiableVariables: AllDifferentiableVariables { get set }
 
   /// Returns `self` moved along the value space towards the given tangent
   /// vector. In Riemannian geometry (mathematics), this represents an
-  /// exponential map.
-  func moved(along direction: TangentVector) -> Self
+  /// exponential map or retraction.
+  func moved(along direction: Derivative) -> Self
 
   /// Convert a cotangent vector to its corresponding tangent vector.
-  func tangentVector(from cotangent: CotangentVector) -> TangentVector
+  func tangentVector(from cotangent: Gradient) -> Derivative
 }
+
+// public extension Differentiable {
+//   typealias TangentVector = Derivative
+//   typealias CotangentVector = Gradient
+// }
 
 public extension Differentiable where AllDifferentiableVariables == Self {
   var allDifferentiableVariables: AllDifferentiableVariables {
@@ -97,11 +104,11 @@ public extension Differentiable where AllDifferentiableVariables == Self {
 }
 
 // FIXME: The `Self : AdditiveArithmetic` constraint should be implied by
-// `TangentVector == Self`, but the type checker errors out when it does not
+// `Derivative == Self`, but the type checker errors out when it does not
 // exist.
 public extension Differentiable
-  where TangentVector == Self, Self : AdditiveArithmetic {
-  func moved(along direction: TangentVector) -> Self {
+  where Derivative == Self, Self : AdditiveArithmetic {
+  func moved(along direction: Derivative) -> Self {
     return self + direction
   }
 }
@@ -114,13 +121,13 @@ public extension Differentiable
 @inlinable
 public func differentiableFunction<T : Differentiable, R : Differentiable>(
   from vjp: @escaping (T)
-           -> (value: R, pullback: (R.CotangentVector) -> T.CotangentVector)
+           -> (value: R, pullback: (R.Gradient) -> T.Gradient)
 ) -> @autodiff (T) -> R {
   @differentiable(vjp: _vjp)
   func original(_ x: T) -> R {
     return vjp(x).value
   }
-  func _vjp(_ x: T) -> (R, (R.CotangentVector) -> T.CotangentVector) {
+  func _vjp(_ x: T) -> (R, (R.Gradient) -> T.Gradient) {
     return vjp(x)
   }
   return original
@@ -130,8 +137,8 @@ public func differentiableFunction<T : Differentiable, R : Differentiable>(
 @inlinable
 public func differentiableFunction<T, U, R>(
   from vjp: @escaping (T, U)
-           -> (value: R, pullback: (R.CotangentVector)
-             -> (T.CotangentVector, U.CotangentVector))
+           -> (value: R, pullback: (R.Gradient)
+             -> (T.Gradient, U.Gradient))
 ) -> @autodiff (T, U) -> R
   where T : Differentiable, U : Differentiable, R : Differentiable {
   @differentiable(vjp: _vjp)
@@ -139,7 +146,7 @@ public func differentiableFunction<T, U, R>(
     return vjp(x, y).value
   }
   func _vjp(_ x: T, _ y: U)
-    -> (R, (R.CotangentVector) -> (T.CotangentVector, U.CotangentVector)) {
+    -> (R, (R.Gradient) -> (T.Gradient, U.Gradient)) {
     return vjp(x, y)
   }
   return original
@@ -153,30 +160,30 @@ public extension Differentiable {
   @inlinable
   func valueWithPullback<R : Differentiable>(
     in f: @autodiff (Self) -> R
-  ) -> (value: R, pullback: (R.CotangentVector) -> CotangentVector) {
+  ) -> (value: R, pullback: (R.Gradient) -> Gradient) {
     return Builtin.autodiffApply_vjp_arity1(f, self)
   }
 
   @inlinable
   func pullback<R : Differentiable>(
     in f: @autodiff (Self) -> R
-  ) -> (R.CotangentVector) -> CotangentVector {
+  ) -> (R.Gradient) -> Gradient {
     return Builtin.autodiffApply_vjp_arity1(f, self).1
   }
 
   @inlinable
   func gradient<R : Differentiable>(
     in f: @autodiff (Self) -> R
-  ) -> CotangentVector
-    where R : FloatingPoint, R.CotangentVector == R {
+  ) -> Gradient
+    where R : FloatingPoint, R.Gradient == R {
     return self.pullback(in: f)(R(1))
   }
 
   @inlinable
   func valueWithGradient<R : Differentiable>(
     in f: @autodiff (Self) -> R
-  ) -> (value: R, gradient: CotangentVector)
-    where R : FloatingPoint, R.CotangentVector == R {
+  ) -> (value: R, gradient: Gradient)
+    where R : FloatingPoint, R.Gradient == R {
     let (y, pb) = self.valueWithPullback(in: f)
     return (y, pb(R(1)))
   }
@@ -185,30 +192,30 @@ public extension Differentiable {
   func valueWithPullback<T : Differentiable, R : Differentiable>(
     at x: T, in f: @autodiff (Self, T) -> R
   ) -> (value: R,
-        pullback: (R.CotangentVector) -> (CotangentVector, T.CotangentVector)) {
+        pullback: (R.Gradient) -> (Gradient, T.Gradient)) {
     return Builtin.autodiffApply_vjp_arity2(f, self, x)
   }
 
   @inlinable
   func pullback<T : Differentiable, R : Differentiable>(
     at x: T, in f: @autodiff (Self, T) -> R
-  ) -> (R.CotangentVector) -> (CotangentVector, T.CotangentVector) {
+  ) -> (R.Gradient) -> (Gradient, T.Gradient) {
     return Builtin.autodiffApply_vjp_arity2(f, self, x).1
   }
 
   @inlinable
   func gradient<T : Differentiable, R : Differentiable>(
     at x: T, in f: @autodiff (Self, T) -> R
-  ) -> (CotangentVector, T.CotangentVector)
-    where R : FloatingPoint, R.CotangentVector == R {
+  ) -> (Gradient, T.Gradient)
+    where R : FloatingPoint, R.Gradient == R {
     return self.pullback(at: x, in: f)(R(1))
   }
 
   @inlinable
   func valueWithGradient<T : Differentiable, R : Differentiable>(
     at x: T, in f: @autodiff (Self, T) -> R
-  ) -> (value: R, gradient: (CotangentVector, T.CotangentVector))
-    where R : FloatingPoint, R.CotangentVector == R {
+  ) -> (value: R, gradient: (Gradient, T.Gradient))
+    where R : FloatingPoint, R.Gradient == R {
     let (y, pb) = self.valueWithPullback(at: x, in: f)
     return (y, pb(R(1)))
   }
@@ -223,7 +230,7 @@ public extension Differentiable {
 @inlinable
 public func valueWithPullback<T, R>(
   at x: T, in f: @autodiff (T) -> R
-) -> (value: R, pullback: (R.CotangentVector) -> T.CotangentVector)
+) -> (value: R, pullback: (R.Gradient) -> T.Gradient)
   where T : Differentiable, R : Differentiable {
   return Builtin.autodiffApply_vjp(f, x)
 }
@@ -232,7 +239,7 @@ public func valueWithPullback<T, R>(
 public func valueWithPullback<T, U, R>(
   at x: T, _ y: U, in f: @autodiff (T, U) -> R
 ) -> (value: R,
-      pullback: (R.CotangentVector) -> (T.CotangentVector, U.CotangentVector))
+      pullback: (R.Gradient) -> (T.Gradient, U.Gradient))
   where T : Differentiable, U : Differentiable, R : Differentiable {
   return Builtin.autodiffApply_vjp_arity2(f, x, y)
 }
@@ -241,8 +248,8 @@ public func valueWithPullback<T, U, R>(
 public func valueWithPullback<T, U, V, R>(
   at x: T, _ y: U, _ z: V, in f: @autodiff (T, U, V) -> R
 ) -> (value: R,
-      pullback: (R.CotangentVector)
-        -> (T.CotangentVector, U.CotangentVector, V.CotangentVector))
+      pullback: (R.Gradient)
+        -> (T.Gradient, U.Gradient, V.Gradient))
   where T : Differentiable, U : Differentiable, V : Differentiable,
         R : Differentiable {
   return Builtin.autodiffApply_vjp_arity3(f, x, y, z)
@@ -253,7 +260,7 @@ public func valueWithPullback<T, U, V, R>(
 @inlinable
 public func _valueWithPullback<T, U, R>(
   at x: T, _ y: U, in f: @autodiff (T) -> (U) -> R
-) -> (value: R, pullback: (R.CotangentVector) -> (T.CotangentVector, U.CotangentVector))
+) -> (value: R, pullback: (R.Gradient) -> (T.Gradient, U.Gradient))
   where T : Differentiable, U : Differentiable, R : Differentiable {
   return Builtin.autodiffApply_vjp_method(f, x, y)
 }
@@ -263,7 +270,7 @@ public func _valueWithPullback<T, U, R>(
 @inlinable
 public func pullback<T, R>(
   at x: T, in f: @autodiff (T) -> R
-) -> (R.CotangentVector) -> T.CotangentVector
+) -> (R.Gradient) -> T.Gradient
   where T : Differentiable, R : Differentiable {
   return Builtin.autodiffApply_vjp(f, x).1
 }
@@ -271,7 +278,7 @@ public func pullback<T, R>(
 @inlinable
 public func pullback<T, U, R>(
   at x: T, _ y: U, in f: @autodiff (T, U) -> R
-) -> (R.CotangentVector) -> (T.CotangentVector, U.CotangentVector)
+) -> (R.Gradient) -> (T.Gradient, U.Gradient)
   where T : Differentiable, U : Differentiable, R : Differentiable {
   return Builtin.autodiffApply_vjp_arity2(f, x, y).1
 }
@@ -279,8 +286,8 @@ public func pullback<T, U, R>(
 @inlinable
 public func pullback<T, U, V, R>(
   at x: T, _ y: U, _ z: V, in f: @autodiff (T, U, V) -> R
-) -> (R.CotangentVector)
-    -> (T.CotangentVector, U.CotangentVector, V.CotangentVector)
+) -> (R.Gradient)
+    -> (T.Gradient, U.Gradient, V.Gradient)
   where T : Differentiable, U : Differentiable, V : Differentiable,
         R : Differentiable {
   return Builtin.autodiffApply_vjp_arity3(f, x, y, z).1
@@ -291,9 +298,9 @@ public func pullback<T, U, V, R>(
 @inlinable
 public func valueWithGradient<T, R>(
   at x: T, in f: @autodiff (T) -> R
-) -> (value: R, gradient: T.CotangentVector)
+) -> (value: R, gradient: T.Gradient)
   where T : Differentiable, R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   let (y, pullback) = valueWithPullback(at: x, in: f)
   return (y, pullback(R(1)))
 }
@@ -301,9 +308,9 @@ public func valueWithGradient<T, R>(
 @inlinable
 public func valueWithGradient<T, U, R>(
   at x: T, _ y: U, in f: @autodiff (T, U) -> R
-) -> (value: R, gradient: (T.CotangentVector, U.CotangentVector))
+) -> (value: R, gradient: (T.Gradient, U.Gradient))
   where T : Differentiable, U : Differentiable,
-        R : FloatingPoint & Differentiable, R.CotangentVector == R {
+        R : FloatingPoint & Differentiable, R.Gradient == R {
   let (y, pullback) = valueWithPullback(at: x, y, in: f)
   return (y, pullback(R(1)))
 }
@@ -312,9 +319,9 @@ public func valueWithGradient<T, U, R>(
 public func valueWithGradient<T, U, V, R>(
   at x: T, _ y: U, _ z: V, in f: @autodiff (T, U, V) -> R
 ) -> (value: R,
-      gradient: (T.CotangentVector, U.CotangentVector, V.CotangentVector))
+      gradient: (T.Gradient, U.Gradient, V.Gradient))
   where T : Differentiable, U : Differentiable, V : Differentiable,
-        R : FloatingPoint & Differentiable, R.CotangentVector == R {
+        R : FloatingPoint & Differentiable, R.Gradient == R {
   let (y, pullback) = valueWithPullback(at: x, y, z, in: f)
   return (y, pullback(R(1)))
 }
@@ -324,19 +331,19 @@ public func valueWithGradient<T, U, V, R>(
 @inlinable
 public func valueWithGradient<T, R>(
   of f: @escaping @autodiff (T) -> R
-) -> (T) -> (value: R, gradient: T.CotangentVector)
+) -> (T) -> (value: R, gradient: T.Gradient)
   where T : Differentiable, R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x in valueWithGradient(at: x, in: f) }
 }
 
 @inlinable
 public func valueWithGradient<T, U, R>(
   of f: @escaping @autodiff (T, U) -> R
-) -> (T, U) -> (value: R, gradient: (T.CotangentVector, U.CotangentVector))
+) -> (T, U) -> (value: R, gradient: (T.Gradient, U.Gradient))
   where T : Differentiable, U : Differentiable,
         R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x, y in valueWithGradient(at: x, y, in: f) }
 }
 
@@ -345,10 +352,10 @@ public func valueWithGradient<T, U, V, R>(
   of f: @escaping @autodiff (T, U, V) -> R
 ) -> (T, U, V)
     -> (value: R,
-        gradient: (T.CotangentVector, U.CotangentVector, V.CotangentVector))
+        gradient: (T.Gradient, U.Gradient, V.Gradient))
   where T : Differentiable, U : Differentiable, V : Differentiable,
         R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x, y, z in valueWithGradient(at: x, y, z, in: f) }
 }
 
@@ -357,27 +364,27 @@ public func valueWithGradient<T, U, V, R>(
 @inlinable
 public func gradient<T, R>(
   at x: T, in f: @autodiff (T) -> R
-) -> T.CotangentVector
+) -> T.Gradient
   where T : Differentiable, R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return pullback(at: x, in: f)(R(1))
 }
 
 @inlinable
 public func gradient<T, U, R>(
   at x: T, _ y: U, in f: @autodiff (T, U) -> R
-) -> (T.CotangentVector, U.CotangentVector)
+) -> (T.Gradient, U.Gradient)
   where T : Differentiable, U : Differentiable,
-        R : FloatingPoint & Differentiable, R.CotangentVector == R {
+        R : FloatingPoint & Differentiable, R.Gradient == R {
   return pullback(at: x, y, in: f)(R(1))
 }
 
 @inlinable
 public func gradient<T, U, V, R>(
   at x: T, _ y: U, _ z: V, in f: @autodiff (T, U, V) -> R
-) -> (T.CotangentVector, U.CotangentVector, V.CotangentVector)
+) -> (T.Gradient, U.Gradient, V.Gradient)
   where T : Differentiable, U : Differentiable, V : Differentiable,
-        R : FloatingPoint & Differentiable, R.CotangentVector == R {
+        R : FloatingPoint & Differentiable, R.Gradient == R {
   return pullback(at: x, y, z, in: f)(R(1))
 }
 
@@ -386,29 +393,29 @@ public func gradient<T, U, V, R>(
 @inlinable
 public func gradient<T, R>(
   of f: @escaping @autodiff (T) -> R
-) -> (T) -> T.CotangentVector
+) -> (T) -> T.Gradient
   where T : Differentiable, R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x in gradient(at: x, in: f) }
 }
 
 @inlinable
 public func gradient<T, U, R>(
   of f: @escaping @autodiff (T, U) -> R
-) -> (T, U) -> (T.CotangentVector, U.CotangentVector)
+) -> (T, U) -> (T.Gradient, U.Gradient)
   where T : Differentiable, U : Differentiable,
         R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x, y in gradient(at: x, y, in: f) }
 }
 
 @inlinable
 public func gradient<T, U, V, R>(
   of f: @escaping @autodiff (T, U, V) -> R
-) -> (T, U, V) -> (T.CotangentVector, U.CotangentVector, V.CotangentVector)
+) -> (T, U, V) -> (T.Gradient, U.Gradient, V.Gradient)
   where T : Differentiable, U : Differentiable, V : Differentiable,
         R : FloatingPoint & Differentiable,
-        R.CotangentVector == R {
+        R.Gradient == R {
   return { x, y, z in gradient(at: x, y, z, in: f) }
 }
 

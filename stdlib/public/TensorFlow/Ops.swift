@@ -111,7 +111,7 @@ extension Tensor : VectorNumeric where Scalar : Numeric {
   @differentiable(
     vjp: _vjpMultiply(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   public static func * (lhs: Scalar, rhs: Tensor) -> Tensor {
     return Tensor(lhs) * rhs
@@ -123,11 +123,11 @@ extension Tensor : ShapedVectorNumeric where Scalar : Numeric {}
 extension Tensor : Differentiable
   where Scalar : Differentiable & FloatingPoint
 {
-  public typealias TangentVector = Tensor
-  public typealias CotangentVector = Tensor
+  public typealias Derivative = Tensor
+  public typealias Gradient = Tensor
   public typealias AllDifferentiableVariables = Tensor
   @inlinable @inline(__always)
-  public func tangentVector(from cotangent: CotangentVector) -> TangentVector {
+  public func tangentVector(from cotangent: Tensor) -> Tensor {
     return cotangent
   }
 }
@@ -142,7 +142,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpAdd(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func + (lhs: Scalar, rhs: Tensor) -> Tensor {
     return Tensor(lhs) + rhs
@@ -153,7 +153,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpAdd(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func + (lhs: Tensor, rhs: Scalar) -> Tensor {
     return lhs + Tensor(rhs)
@@ -165,7 +165,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpSubtract(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func - (lhs: Scalar, rhs: Tensor) -> Tensor {
     return Tensor(lhs) - rhs
@@ -177,7 +177,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpSubtract(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func - (lhs: Tensor, rhs: Scalar) -> Tensor {
     return lhs - Tensor(rhs)
@@ -229,7 +229,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpMultiply(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func * (lhs: Tensor, rhs: Scalar) -> Tensor {
     return lhs * Tensor(rhs)
@@ -265,7 +265,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpDivide(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func / (lhs: Scalar, rhs: Tensor) -> Tensor {
     return Tensor(lhs) / rhs
@@ -277,7 +277,7 @@ public extension Tensor where Scalar : Numeric {
   @differentiable(
     vjp: _vjpDivide(lhs:rhs:)
     where Scalar : Differentiable & FloatingPoint,
-          Scalar == Scalar.CotangentVector
+          Scalar == Scalar.Gradient
   )
   static func / (lhs: Tensor, rhs: Scalar) -> Tensor {
     return lhs / Tensor(rhs)
@@ -1612,7 +1612,7 @@ public extension Tensor where Scalar : BinaryFloatingPoint {
   @inlinable
   @differentiable(
     wrt: (self, .1, .2), vjp: _vjpBatchNormalized
-    where Scalar : Differentiable, Scalar == Scalar.CotangentVector
+    where Scalar : Differentiable, Scalar == Scalar.Gradient
   )
   func batchNormalized(
     alongAxis axis: Int32,

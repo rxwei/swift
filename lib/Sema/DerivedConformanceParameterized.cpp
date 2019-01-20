@@ -419,11 +419,11 @@ static Type deriveParameterized_Parameters(DerivedConformance &derived) {
     auto vectorNumericType =
         TypeLoc::withoutLoc(vectorNumericProto->getDeclaredType());
     inherited.push_back(vectorNumericType);
-    addVectorSpaceAliasDecl(C.Id_TangentVector, parametersDecl, parametersType);
-    addVectorSpaceAliasDecl(C.Id_CotangentVector, parametersDecl,
+    addVectorSpaceAliasDecl(C.Id_Derivative, parametersDecl, parametersType);
+    addVectorSpaceAliasDecl(C.Id_Gradient, parametersDecl,
                             parametersType);
-    addVectorSpaceAliasDecl(C.Id_TangentVector, nominal, parametersType);
-    addVectorSpaceAliasDecl(C.Id_CotangentVector, nominal, parametersType);
+    addVectorSpaceAliasDecl(C.Id_Derivative, nominal, parametersType);
+    addVectorSpaceAliasDecl(C.Id_Gradient, nominal, parametersType);
   }
   if (DerivedConformance::canDeriveParameterGroup(parametersDecl)) {
     auto *parameterGroupProto =

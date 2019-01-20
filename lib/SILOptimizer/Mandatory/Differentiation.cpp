@@ -2079,7 +2079,7 @@ public:
     // Use the FieldwiseProductSpace strategy, if appropriate.
     auto *structDecl = sei->getStructDecl();
     auto cotangentDeclLookup =
-        structDecl->lookupDirect(astCtx.Id_CotangentVector);
+        structDecl->lookupDirect(astCtx.Id_Gradient);
     if (cotangentDeclLookup.size() >= 1) {
       assert(cotangentDeclLookup.size() == 1);
       auto cotangentTypeDecl = cotangentDeclLookup.front();

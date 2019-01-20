@@ -69,11 +69,11 @@ bool DerivedConformance::canDeriveDifferentiable(NominalTypeDecl *nominal,
   auto *diffableProto = C.getProtocol(KnownProtocolKind::Differentiable);
   auto *addArithProto = C.getProtocol(KnownProtocolKind::AdditiveArithmetic);
 
-  // Nominal type must not customize `TangentVector`, `CotangentVector`, or
+  // Nominal type must not customize `Derivative`, `Gradient`, or
   // `AllDifferentiableVariables` to anything other than `Self`.
   // Otherwise, synthesis is semantically unsupported.
-  auto tangentDecls = nominal->lookupDirect(C.Id_TangentVector);
-  auto cotangentDecls = nominal->lookupDirect(C.Id_CotangentVector);
+  auto tangentDecls = nominal->lookupDirect(C.Id_Derivative);
+  auto cotangentDecls = nominal->lookupDirect(C.Id_Gradient);
   auto allDiffableVarsDecls =
       nominal->lookupDirect(C.Id_AllDifferentiableVariables);
   auto isValidAssociatedTypeCandidate = [&](ValueDecl *v) {
@@ -214,10 +214,10 @@ static void deriveBodyDifferentiable_method(AbstractFunctionDecl *funcDecl,
   auto *paramDRE =
       new (C) DeclRefExpr(paramDecl, DeclNameLoc(), /*Implicit*/ true);
 
-  // If this is the `tangentVector(from:)` method and the `TangentVector` and
-  // `CotangentVector` types are identical, simply return the parameter
+  // If this is the `tangentVector(from:)` method and the `Derivative` and
+  // `Gradient` types are identical, simply return the parameter
   // `cotangent` expression. This is more efficient than constructing a new
-  // `TangentVector` instance, which is unnecessary.
+  // `Derivative` instance, which is unnecessary.
   if (methodName == C.Id_tangentVector &&
       retNominalInterfaceType->isEqual(paramDecl->getInterfaceType())) {
     ASTNode returnStmt = new (C) ReturnStmt(SourceLoc(), paramDRE, true);
@@ -384,8 +384,8 @@ static ValueDecl *deriveDifferentiable_moved(DerivedConformance &derived) {
   auto parentDC = derived.getConformanceContext();
   auto selfInterfaceType = parentDC->getDeclaredInterfaceType();
 
-  auto *tangentDecl = getAssociatedStructDecl(nominal, C.Id_TangentVector);
-  assert(tangentDecl && "'TangentVector' struct must exist");
+  auto *tangentDecl = getAssociatedStructDecl(nominal, C.Id_Derivative);
+  assert(tangentDecl && "'Derivative' struct must exist");
   auto tangentType = tangentDecl->getDeclaredInterfaceType();
 
   return deriveDifferentiable_method(
@@ -400,12 +400,12 @@ deriveDifferentiable_tangentVector(DerivedConformance &derived) {
   auto nominal = derived.Nominal;
   auto &C = derived.TC.Context;
 
-  auto *tangentDecl = getAssociatedStructDecl(nominal, C.Id_TangentVector);
-  assert(tangentDecl && "'TangentVector' struct must exist");
+  auto *tangentDecl = getAssociatedStructDecl(nominal, C.Id_Derivative);
+  assert(tangentDecl && "'Derivative' struct must exist");
   auto tangentType = tangentDecl->getDeclaredInterfaceType();
 
-  auto *cotangentDecl = getAssociatedStructDecl(nominal, C.Id_CotangentVector);
-  assert(cotangentDecl && "'CotangentVector' struct must exist");
+  auto *cotangentDecl = getAssociatedStructDecl(nominal, C.Id_Gradient);
+  assert(cotangentDecl && "'Gradient' struct must exist");
   auto cotangentType = cotangentDecl->getDeclaredInterfaceType();
 
   return deriveDifferentiable_method(
@@ -594,17 +594,18 @@ deriveDifferentiable_allDifferentiableVariables(DerivedConformance &derived) {
   return allDiffableVarsDecl;
 }
 
-// Return associated `TangentVector`, `CotangentVector`, or
+// Return associated `Derivative`, `Gradient`, or
 // `AllDifferentiableVariables` struct for a nominal type, if it exists.
 // If not, synthesize the struct.
 static StructDecl *
-getOrSynthesizeSingleAssociatedStruct(DerivedConformance &derived, Identifier id) {
+getOrSynthesizeSingleAssociatedStruct(DerivedConformance &derived,
+                                      Identifier id) {
   auto &TC = derived.TC;
   auto parentDC = derived.getConformanceContext();
   auto nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
 
-  assert(id == C.Id_TangentVector || id == C.Id_CotangentVector ||
+  assert(id == C.Id_Derivative || id == C.Id_Gradient ||
          id == C.Id_AllDifferentiableVariables);
 
   // If the associated struct already exists, return it.
@@ -627,9 +628,9 @@ getOrSynthesizeSingleAssociatedStruct(DerivedConformance &derived, Identifier id
   auto *kpIterableProto = C.getProtocol(KnownProtocolKind::KeyPathIterable);
   auto kpIterableType = TypeLoc::withoutLoc(kpIterableProto->getDeclaredType());
   SmallVector<TypeLoc, 3> inherited {diffableType};
-  // If the associated type is `TangentVector` or `CotangentVector`, make it
+  // If the associated type is `Derivative` or `Gradient`, make it
   // also conform to `AdditiveArithmetic`.
-  if (id == C.Id_TangentVector || id == C.Id_CotangentVector)
+  if (id == C.Id_Derivative || id == C.Id_Gradient)
     inherited.push_back(addArithType);
 
   // Cache original members and their associated types for later use.
@@ -765,8 +766,8 @@ static void addAssociatedTypeAliasDecl(Identifier name,
   C.addSynthesizedDecl(aliasDecl);
 };
 
-// Get or synthesize all associated struct types: 'TangentVector',
-// 'CotangentVector', and 'AllDifferentiableVariables'.
+// Get or synthesize all associated struct types: 'Derivative',
+// 'Gradient', and 'AllDifferentiableVariables'.
 // Return the type corresponding to the given identifier.
 static Type
 getOrSynthesizeAssociatedStructType(DerivedConformance &derived,
@@ -776,30 +777,30 @@ getOrSynthesizeAssociatedStructType(DerivedConformance &derived,
   auto nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
 
-  // Otherwise, get or synthesize `TangentVector`, `CotangentVector`, and
+  // Otherwise, get or synthesize `Derivative`, `Gradient`, and
   // `AllDifferentiableVariables` structs at once. Synthesizing all three
   // structs at once is necessary in order to correctly set their mutually
   // recursive associated types.
   auto tangentStruct =
-      getOrSynthesizeSingleAssociatedStruct(derived, C.Id_TangentVector);
+      getOrSynthesizeSingleAssociatedStruct(derived, C.Id_Derivative);
   auto cotangentStruct =
-      getOrSynthesizeSingleAssociatedStruct(derived, C.Id_CotangentVector);
+      getOrSynthesizeSingleAssociatedStruct(derived, C.Id_Gradient);
   auto allDiffableVarsStruct = getOrSynthesizeSingleAssociatedStruct(derived,
       C.Id_AllDifferentiableVariables);
 
   // Add associated typealiases for structs.
-  addAssociatedTypeAliasDecl(C.Id_TangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Derivative,
                              tangentStruct, tangentStruct, TC);
-  addAssociatedTypeAliasDecl(C.Id_TangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Derivative,
                              cotangentStruct, cotangentStruct, TC);
-  addAssociatedTypeAliasDecl(C.Id_TangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Derivative,
                              allDiffableVarsStruct, tangentStruct, TC);
 
-  addAssociatedTypeAliasDecl(C.Id_CotangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Gradient,
                              tangentStruct, cotangentStruct, TC);
-  addAssociatedTypeAliasDecl(C.Id_CotangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Gradient,
                              cotangentStruct, tangentStruct, TC);
-  addAssociatedTypeAliasDecl(C.Id_CotangentVector,
+  addAssociatedTypeAliasDecl(C.Id_Gradient,
                              allDiffableVarsStruct, cotangentStruct, TC);
 
   addAssociatedTypeAliasDecl(C.Id_AllDifferentiableVariables,
@@ -833,9 +834,9 @@ getOrSynthesizeAssociatedStructType(DerivedConformance &derived,
 
   // Return the requested associated struct type.
   StructDecl *requestedStructDecl = nullptr;
-  if (id == C.Id_TangentVector)
+  if (id == C.Id_Derivative)
     requestedStructDecl = tangentStruct;
-  else if (id == C.Id_CotangentVector)
+  else if (id == C.Id_Gradient)
     requestedStructDecl = cotangentStruct;
   else if (id == C.Id_AllDifferentiableVariables)
     requestedStructDecl = allDiffableVarsStruct;
@@ -845,7 +846,7 @@ getOrSynthesizeAssociatedStructType(DerivedConformance &derived,
       requestedStructDecl->getDeclaredInterfaceType());
 }
 
-// Synthesize an associated struct type ('TangentVector', 'CotangentVector', or
+// Synthesize an associated struct type ('Derivative', 'Gradient', or
 // 'AllDifferentiableVariables').
 static Type
 deriveDifferentiable_AssociatedStruct(DerivedConformance &derived,
@@ -869,7 +870,7 @@ deriveDifferentiable_AssociatedStruct(DerivedConformance &derived,
   // - No `@noDerivative` stored properties exist.
   // - All stored properties must have specified associated type equal to
   //   `Self`.
-  // - If associated type is `TangentVector` or `CotangentVector`, parent type
+  // - If associated type is `Derivative` or `Gradient`, parent type
   //   must also conform to `AdditiveArithmetic`.
   bool allMembersAssocTypeEqualsSelf =
       llvm::all_of(diffProperties, [&](VarDecl *member) {
@@ -904,13 +905,13 @@ deriveDifferentiable_AssociatedStruct(DerivedConformance &derived,
 
   // Otherwise, check if all stored properties have all `Differentiable`
   // protocol associated types equal to `Self`:
-  // `Self == TangentVector == CotangentVector == AllDifferentiableVariables`.
+  // `Self == Derivative == Gradient == AllDifferentiableVariables`.
   bool allMembersAssocTypesEqualsSelf =
       llvm::all_of(diffProperties, [&](VarDecl *member) {
         auto tangentType =
-            getAssociatedType(member, nominal, C.Id_TangentVector);
+            getAssociatedType(member, nominal, C.Id_Derivative);
         auto cotangentType =
-            getAssociatedType(member, nominal, C.Id_CotangentVector);
+            getAssociatedType(member, nominal, C.Id_Gradient);
         auto allDiffableVarsType =
             getAssociatedType(member, nominal, C.Id_AllDifferentiableVariables);
         return member->getType()->isEqual(tangentType) &&
@@ -923,19 +924,22 @@ deriveDifferentiable_AssociatedStruct(DerivedConformance &derived,
   // - All stored properties have all `Differentiable` protocol associated
   //    types equal to `Self`.
   // Then get or synthesize `AllDifferentiableVariables` struct and let
-  // `TangentVector` and `CotangentVector` alias to it.
+  // `Derivative` and `Gradient` alias to it.
   if (allMembersAssocTypesEqualsSelf) {
     auto allDiffableVarsStruct = getOrSynthesizeSingleAssociatedStruct(
         derived, C.Id_AllDifferentiableVariables);
     addAssociatedTypeAliasDecl(C.Id_AllDifferentiableVariables,
-                               allDiffableVarsStruct, allDiffableVarsStruct, TC);
-    addAssociatedTypeAliasDecl(C.Id_TangentVector,
-                               allDiffableVarsStruct, allDiffableVarsStruct, TC);
-    addAssociatedTypeAliasDecl(C.Id_CotangentVector,
-                               allDiffableVarsStruct, allDiffableVarsStruct, TC);
-    addAssociatedTypeAliasDecl(C.Id_TangentVector,
+                               allDiffableVarsStruct,
+                               allDiffableVarsStruct, TC);
+    addAssociatedTypeAliasDecl(C.Id_Derivative,
+                               allDiffableVarsStruct,
+                               allDiffableVarsStruct, TC);
+    addAssociatedTypeAliasDecl(C.Id_Gradient,
+                               allDiffableVarsStruct,
+                               allDiffableVarsStruct, TC);
+    addAssociatedTypeAliasDecl(C.Id_Derivative,
                                nominal, allDiffableVarsStruct, TC);
-    addAssociatedTypeAliasDecl(C.Id_CotangentVector,
+    addAssociatedTypeAliasDecl(C.Id_Gradient,
                                nominal, allDiffableVarsStruct, TC);
     TC.validateDecl(allDiffableVarsStruct);
     return parentDC->mapTypeIntoContext(
@@ -958,12 +962,12 @@ ValueDecl *DerivedConformance::deriveDifferentiable(ValueDecl *requirement) {
 }
 
 Type DerivedConformance::deriveDifferentiable(AssociatedTypeDecl *requirement) {
-  if (requirement->getBaseName() == TC.Context.Id_TangentVector)
+  if (requirement->getBaseName() == TC.Context.Id_Derivative)
     return deriveDifferentiable_AssociatedStruct(
-        *this, TC.Context.Id_TangentVector);
-  if (requirement->getBaseName() == TC.Context.Id_CotangentVector)
+        *this, TC.Context.Id_Derivative);
+  if (requirement->getBaseName() == TC.Context.Id_Gradient)
     return deriveDifferentiable_AssociatedStruct(
-        *this, TC.Context.Id_CotangentVector);
+        *this, TC.Context.Id_Gradient);
   if (requirement->getBaseName() == TC.Context.Id_AllDifferentiableVariables)
     return deriveDifferentiable_AssociatedStruct(
         *this, TC.Context.Id_AllDifferentiableVariables);

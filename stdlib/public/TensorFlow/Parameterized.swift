@@ -50,8 +50,8 @@ public protocol Parameterized : Differentiable {
   /// The type representing all parameters, synthesized from stored properties
   /// marked with `@TFParameter`.
   associatedtype Parameters : Differentiable & KeyPathIterable
-    where TangentVector == Parameters.TangentVector,
-          CotangentVector == Parameters.CotangentVector
+    where Derivative == Parameters.Derivative,
+          Gradient == Parameters.Gradient
 
   var allParameters: Parameters { get set }
 }
