@@ -281,6 +281,12 @@ struct AutoDiffAssociatedFunctionKind {
   AutoDiffAssociatedFunctionKind(innerty rawValue) : rawValue(rawValue) {}
   explicit AutoDiffAssociatedFunctionKind(StringRef string);
   operator innerty() const { return rawValue; }
+  SmallString<3> str() const {
+    switch (rawValue) {
+    case JVP: return "jvp";
+    case VJP: return "vjp";
+    }
+  }
 };
 
 /// In conjunction with the original function decl, identifies an associated

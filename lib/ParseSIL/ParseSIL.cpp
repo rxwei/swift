@@ -1230,7 +1230,8 @@ static bool parseDeclSILOptional(bool *isTransparent,
                                  SmallVectorImpl<std::string> *Semantics,
                                  SmallVectorImpl<ParsedSpecAttr> *SpecAttrs,
                                  // SWIFT_ENABLE_TENSORFLOW
-                          SmallVectorImpl<SILDifferentiableAttr *> *DiffAttrs,
+                  SmallVectorImpl<SILDifferentiableAttr *> *DifferentiableAttrs,
+                SmallVectorImpl<SILDifferentiatingAttr *> *DifferentiatingAttrs,
                                  ValueDecl **ClangDecl,
                                  EffectsKind *MRK, SILParser &SP,
                                  SILModule &M) {
@@ -1361,9 +1362,15 @@ static bool parseDeclSILOptional(bool *isTransparent,
       continue;
     }
     // SWIFT_ENABLE_TENSORFLOW
-    else if (DiffAttrs && SP.P.Tok.getText() == "differentiable") {
+    else if (DifferentiableAttrs && SP.P.Tok.getText() == "differentiable") {
       SP.P.consumeToken(tok::identifier);
-      if (parseDifferentiableAttr(*DiffAttrs, SP))
+      if (parseDifferentiableAttr(*DifferentiableAttrs, SP))
+        return true;
+      continue;
+    }
+    else if (DifferentiatingAttrs && SP.P.Tok.getText() == "differentiating") {
+      SP.P.consumeToken(tok::identifier);
+      if (parseDifferentiatingAttr(*DifferentiatingAttrs, SP))
         return true;
       continue;
     }
@@ -5930,7 +5937,7 @@ bool SILParserTUState::parseDeclSIL(Parser &P) {
   SmallVector<std::string, 1> Semantics;
   SmallVector<ParsedSpecAttr, 4> SpecAttrs;
   // SWIFT_ENABLE_TENSORFLOW
-  SmallVector<SILDifferentiableAttr *, 4> DiffAttrs;
+  SmallVector<SILDifferentiableAttr *, 4> DifferentiableAttrs;
   ValueDecl *ClangDecl = nullptr;
   EffectsKind MRK = EffectsKind::Unspecified;
   SILFunction *DynamicallyReplacedFunction = nullptr;
@@ -5942,7 +5949,7 @@ bool SILParserTUState::parseDeclSIL(Parser &P) {
                            &optimizationMode, nullptr, &isWeakLinked,
                            &isWithoutActuallyEscapingThunk, &Semantics,
                            // SWIFT_ENABLE_TENSORFLOW
-                           &SpecAttrs, &DiffAttrs, &ClangDecl, &MRK,
+                           &SpecAttrs, &DifferentiableAttrs, &ClangDecl, &MRK,
                            FunctionState, M) ||
       P.parseToken(tok::at_sign, diag::expected_sil_function_name) ||
       P.parseIdentifier(FnName, FnNameLoc, diag::expected_sil_function_name) ||
@@ -5980,7 +5987,7 @@ bool SILParserTUState::parseDeclSIL(Parser &P) {
     FunctionState.F->setInlineStrategy(inlineStrategy);
     FunctionState.F->setOptimizationMode(optimizationMode);
     // SWIFT_ENABLE_TENSORFLOW
-    for (auto &Attr : DiffAttrs)
+    for (auto &Attr : DifferentiableAttrs)
       FunctionState.F->addDifferentiableAttr(Attr);
     FunctionState.F->setEffectsKind(MRK);
     if (ClangDecl)
@@ -6012,7 +6019,7 @@ bool SILParserTUState::parseDeclSIL(Parser &P) {
       }
 
       // SWIFT_ENABLE_TENSORFLOW
-      for (auto &attr : DiffAttrs) {
+      for (auto &attr : DifferentiableAttrs) {
         // Resolve where clause requirements.
         // If no where clause, continue.
         if (!attr->getWhereClause())

@@ -2539,6 +2539,10 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
     OS << "[differentiable "; Attr->print(OS); OS << "] ";
   }
 
+  for (auto *Attr : getDifferentiatingAtrs()) {
+    OS << "[differentiating "; Attr->print(OS); OS << "] ";
+  }
+
   // TODO: Handle clang node owners which don't have a name.
   if (hasClangNode() && getClangNodeOwner()->hasName()) {
     OS << "[clang ";
@@ -3219,13 +3223,17 @@ void SILSpecializeAttr::print(llvm::raw_ostream &OS) const {
   }
 }
 
-/// SWIFT_ENABLE_TENSORFLOW
-void SILDifferentiableAttr::print(llvm::raw_ostream &OS) const {
-  auto &indices = getIndices();
+static void printAutoDiffIndices(const SILAutoDiffIndices &indices,
+                                 llvm::raw_ostream &OS) {
   OS << "source " << indices.source << " wrt ";
   interleave(indices.parameters.set_bits(),
              [&](unsigned index) { OS << index; },
              [&] { OS << ", "; });
+}
+
+/// SWIFT_ENABLE_TENSORFLOW
+void SILDifferentiableAttr::print(llvm::raw_ostream &OS) const {
+  printAutoDiffIndices(getIndices(), OS);
   if (!JVPName.empty()) {
     OS << " jvp @" << JVPName;
   }
@@ -3256,10 +3264,14 @@ void SILDifferentiableAttr::print(llvm::raw_ostream &OS) const {
                                  req.getLayoutConstraint());
         ReqWithDecls.print(OS, SubPrinter);
       }
-    }, [&] {
-      OS << ", ";
-    });
+    }, [&] { OS << ", "; });
   }
+}
+
+void SILDifferentiatingAttr::print(llvm::raw_ostream &OS) const {
+  OS << '@' << OriginalFunctionName << ' ';
+  printAutoDiffIndices(getIndices(), OS);
+  OS << ' ' << getAssociatedFunctionKind().str();
 }
 
 //===----------------------------------------------------------------------===//

@@ -114,11 +114,6 @@ void SILDifferentiableAttr::setRequirements(
   std::copy(requirements.begin(), requirements.end(), getRequirementsData());
 }
 
-void SILFunction::addDifferentiableAttr(SILDifferentiableAttr *attr) {
-  attr->Original = this;
-  DifferentiableAttrs.push_back(attr);
-}
-
 SILFunction *
 SILFunction::create(SILModule &M, SILLinkage linkage, StringRef name,
                     CanSILFunctionType loweredType,

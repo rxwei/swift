@@ -102,7 +102,7 @@ private:
   }
 };
 
-/// SWIFT_ENABLE_TENSORFLOW
+// SWIFT_ENABLE_TENSORFLOW
 /// Differentiable attribute - @differentiable attribute lowered to SIL. This
 /// attribute is used by the automatic differentiation pass to find the autodiff
 /// functions associated with a function: 'jvp' and 'vjp'.
@@ -177,6 +177,35 @@ public:
             NumRequirements};
   }
   void setRequirements(ArrayRef<Requirement> requirements);
+
+  void print(llvm::raw_ostream &OS) const;
+};
+
+// SWIFT_ENABLE_TENSORFLOW
+/// 'differentiating' attribute - @differentiating attribute lowered to SIL.
+class SILDifferentiatingAttr final {
+private:
+  /// The JVP and VJP function names.
+  StringRef OriginalFunctionName;
+  /// The AD indices.
+  SILAutoDiffIndices Indices;
+  /// The associated function kind.
+  AutoDiffAssociatedFunctionKind Kind;
+
+  SILDifferentiatingAttr(StringRef originalFunctionName,
+                         const SILAutoDiffIndices &indices,
+                         AutoDiffAssociatedFunctionKind kind)
+      : OriginalFunctionName(originalFunctionName),
+        Indices(indices), Kind(kind) {}
+
+public:
+  StringRef getOriginalFunctionName() const { return OriginalFunctionName; }
+
+  const SILAutoDiffIndices &getIndices() const { return Indices; }
+
+  AutoDiffAssociatedFunctionKind getAssociatedFunctionKind() const {
+    return Kind;
+  }
 
   void print(llvm::raw_ostream &OS) const;
 };
@@ -293,8 +322,10 @@ private:
 
   /// SWIFT_ENABLE_TENSORFLOW
   /// The function's `[differentiable]` attributes.
-  llvm::SmallVector<SILDifferentiableAttr *, 4>
-    DifferentiableAttrs;
+  llvm::SmallVector<SILDifferentiableAttr *, 4> DifferentiableAttrs;
+
+  /// The function's `[differentiating]` attributes.
+  llvm::SmallVector<SILDifferentiatingAttr *, 4> DifferentiatingAttrs;
 
   /// The function's effects attribute.
   EffectsKind EffectsKindAttr;
@@ -716,10 +747,25 @@ public:
     return DifferentiableAttrs;
   }
 
-  void addDifferentiableAttr(SILDifferentiableAttr *attr);
+  void addDifferentiableAttr(SILDifferentiableAttr *attr) {
+    attr->Original = this;
+    DifferentiableAttrs.push_back(attr);
+  }
 
   void removeDifferentiableAttr(SILDifferentiableAttr *attr) {
     std::remove(DifferentiableAttrs.begin(), DifferentiableAttrs.end(), attr);
+  }
+
+  ArrayRef<SILDifferentiatingAttr *> getDifferentiatingAttrs() const {
+    return DifferentiatingAttrs;
+  }
+
+  void addDifferentiatingAttr(SILDifferentiatingAttr *attr) {
+    DifferentiatingAttrs.push_back(attr);
+  }
+
+  void removeDifferentiatingAttr(SILDifferentiatingAttr *attr) {
+    std::remove(DifferentiatingAttrs.begin(), DifferentiatingAttrs.end(), attr);
   }
 
   /// Get this function's optimization mode or OptimizationMode::NotSet if it is
