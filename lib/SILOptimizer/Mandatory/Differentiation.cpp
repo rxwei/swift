@@ -983,8 +983,7 @@ public:
   /// given a `[differentiable]` attribute of `original` and the associated
   /// function kind.
   SILFunction *
-  declareExternalAssociatedFunction(SILFunction *original,
-                                    SILDifferentiableAttr *attr,
+  declareExternalAssociatedFunction(SILDifferentiableAttr *attr,
                                     AutoDiffAssociatedFunctionKind kind);
 
   template <typename... T, typename... U>
@@ -1700,9 +1699,11 @@ emitAssociatedFunctionReference(ADContext &context, SILBuilder &builder,
   if (auto *inst = original->getDefiningInstruction()) {
     if (auto *adfei = dyn_cast<AutoDiffFunctionExtractInst>(inst)) {
       if (adfei->getExtractee() == AutoDiffFunctionExtractee::Original) {
-        builder.createRetainValue(original.getLoc(),
-                                  adfei->getFunctionOperand(),
-                                  builder.getDefaultAtomicity());
+        if (adfei->getFunctionOperand()->getType()
+                .isReferenceCounted(context.getModule()))
+          builder.createRetainValue(original.getLoc(),
+                                    adfei->getFunctionOperand(),
+                                    builder.getDefaultAtomicity());
         SILValue assocFn = builder.createAutoDiffFunctionExtract(
             original.getLoc(), kind, /*differentiationOrder*/ 1,
             adfei->getFunctionOperand());
@@ -3793,10 +3794,10 @@ bool AdjointGen::performSynthesis(FunctionSynthesisItem item) {
 
 SILFunction *
 ADContext::declareExternalAssociatedFunction(
-    SILFunction *original, SILDifferentiableAttr *attr,
-    AutoDiffAssociatedFunctionKind kind) {
+    SILDifferentiableAttr *attr, AutoDiffAssociatedFunctionKind kind) {
   auto &module = getModule();
   auto &indices = attr->getIndices();
+  auto *original = attr->getOriginal();
   auto originalTy = original->getLoweredFunctionType();
   auto originalLoc = original->getLocation();
   StringRef name;
@@ -3827,25 +3828,8 @@ DifferentiationTask::DifferentiationTask(ADContext &context,
                                          SILFunction *original,
                                          SILDifferentiableAttr *&&attr,
                                          DifferentiationInvoker invoker)
-    : context(context), original(original), attr(attr), invoker(invoker) {
-  auto &module = context.getModule();
-  if (attr->hasJVP()) {
-    // If attribute specifies JVP name, try to look up JVP in current module.
-    // Otherwise, create an external reference.
-    jvp = module.lookUpFunction(attr->getJVPName());
-    if (!jvp)
-      jvp = context.declareExternalAssociatedFunction(
-          original, attr, AutoDiffAssociatedFunctionKind::JVP);
-  }
-  if (attr->hasVJP()) {
-    // If attribute specifies VJP name, try to look up VJP in current module.
-    // Otherwise, create an external reference.
-    vjp = module.lookUpFunction(attr->getVJPName());
-    if (!vjp)
-      vjp = context.declareExternalAssociatedFunction(
-          original, attr, AutoDiffAssociatedFunctionKind::VJP);
-  }
-
+    : context(context), original(attr->getOriginal()), attr(attr),
+      invoker(invoker) {
   if (!jvp)
     createJVP();
 
@@ -4422,8 +4406,7 @@ void Differentiation::run() {
 
   // Collect `[differentiable]` attributes and `autodiff_function` instructions
   // to process.
-  SmallVector<std::pair<SILFunction *,
-                        SILDifferentiableAttr *>, 8> diffAttrs;
+  SmallVector<SILDifferentiableAttr *, 8> diffAttrs;
   SmallVector<AutoDiffFunctionInst *, 16> autodiffInsts;
   // Handle all the instructions and attributes in the module that trigger
   // differentiation.
@@ -4431,7 +4414,7 @@ void Differentiation::run() {
     // If `f` has a `[differentiable]` attribute, it should become a
     // differentiation task.
     for (auto *diffAttr : f.getDifferentiableAttrs()) {
-      diffAttrs.push_back({&f, diffAttr});
+      diffAttrs.push_back(diffAttr);
       continue;
     }
     for (SILBasicBlock &bb : f)
@@ -4458,7 +4441,27 @@ void Differentiation::run() {
   // For every `[differentiable]` attribute, create a differentiation task. If
   // the attribute has a primal and adjoint, this task will not synthesize
   // anything, but it's still needed as a lookup target.
-  for (auto &fnAndAttr : diffAttrs) {
+  for (auto *attr : diffAttrs) {
+    // If attribute specifies VJP name, try to look up VJP in current module.
+    // Otherwise, create an external reference.
+    if (attr->hasVJP()) {
+      auto vjp = module.lookUpFunction(attr->getVJPName());
+      if (!vjp)
+        vjp = context.declareExternalAssociatedFunction(
+            attr, AutoDiffAssociatedFunctionKind::VJP);
+    }
+    // Otherwise, see if a mangled VJP name exists.
+    else {
+
+    }
+    // If the original doesn't exist
+    if (!attr->hasJVP()) {
+      auto jvp = context.declareExternalAssociatedFunction(
+          attr, AutoDiffAssociatedFunctionKind::JVP);
+    }
+//    if (!attr->hasVJP())
+//      vjp = context.declareExternalAssociatedFunction(
+//                                                      original, attr, AutoDiffAssociatedFunctionKind::VJP);
     context.registerDifferentiationTask(
         fnAndAttr.first, fnAndAttr.second->getIndices(),
         DifferentiationInvoker(fnAndAttr.second, fnAndAttr.first));
