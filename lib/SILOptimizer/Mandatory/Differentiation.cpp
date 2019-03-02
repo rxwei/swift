@@ -5757,13 +5757,11 @@ SILValue ADContext::promoteToDifferentiableFunction(
             orig->isThunk(), orig->getClassSubclassScope(),
             orig->getInlineStrategy(), orig->getEffectsKind(), orig,
             orig->getDebugScope());
-
+        newF->setUnqualifiedOwnership();
         SILFunctionCloner cloner(newF);
         cloner.cloneFunction(orig);
-
         auto *retInst = cast<ReturnInst>(newF->findReturnBB()->getTerminator());
-
-        AutoDiffFunctionInst *adfi;
+        AutoDiffFunctionInst *adfi = nullptr;
         {
           SILBuilder builder(retInst);
           adfi = builder.createAutoDiffFunction(loc, parameterIndices,
@@ -5772,18 +5770,12 @@ SILValue ADContext::promoteToDifferentiableFunction(
           builder.createReturn(loc, adfi);
         }
         retInst->eraseFromParent();
-
-        newF->setUnqualifiedOwnership();
-
-        if (processAutoDiffFunctionInst(adfi)) {
+        if (processAutoDiffFunctionInst(adfi))
           return nullptr;
-        }
-
         auto *fn = builder.createFunctionRefFor(sourceFn->getLoc(), newF);
         SmallVector<SILValue, 8> newArgs;
         for (auto origArg : ai->getArguments())
           newArgs.push_back(origArg);
-
         auto *inst =
             builder.createApply(ai->getLoc(), fn, ai->getSubstitutionMap(),
                                 newArgs, ai->isNonThrowing());
@@ -5812,6 +5804,8 @@ SILValue ADContext::promoteToDifferentiableFunction(
     auto assocFn = assocFnAndIndices->first;
     builder.createRetainValue(loc, assocFn, builder.getDefaultAtomicity());
     assocFns.push_back(assocFn);
+    ValueLifetimeAnalysis vla(origFnOperand);
+                             
   }
 
   return builder.createAutoDiffFunction(
