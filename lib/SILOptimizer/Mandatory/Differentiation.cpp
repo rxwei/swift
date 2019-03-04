@@ -949,11 +949,14 @@ public:
   SILValue promoteToDifferentiableFunction(
       SILBuilder &builder, SILLocation loc, SILValue origFnOperand,
       const llvm::SmallBitVector &parameterIndices,
-      unsigned differentiationOrder, DifferentiationInvoker invoker);
+      unsigned differentiationOrder, DifferentiationInvoker invoker,
+      SmallVectorImpl<AutoDiffFunctionInst *> &newADFIs);
 
   /// For an autodiff_function instruction that is missing associated functions,
   /// fill those in.
-  bool processAutoDiffFunctionInst(AutoDiffFunctionInst *adfi);
+  bool processAutoDiffFunctionInst(
+      AutoDiffFunctionInst *adfi,
+      SmallVectorImpl<AutoDiffFunctionInst *> &newADFIs);
 
 public:
   /// Register a differentiation task in the global worklist. This will ensure
@@ -5727,7 +5730,8 @@ public:
 SILValue ADContext::promoteToDifferentiableFunction(
     SILBuilder &builder, SILLocation loc, SILValue origFnOperand,
     const llvm::SmallBitVector &parameterIndices, unsigned differentiationOrder,
-    DifferentiationInvoker invoker) {
+    DifferentiationInvoker invoker,
+    SmallVectorImpl<AutoDiffFunctionInst *> &newADFIs) {
   if (auto *ai = dyn_cast<ApplyInst>(origFnOperand)) {
     if (auto *sourceFn = dyn_cast<FunctionRefInst>(ai->getCallee())) {
       SILAutoDiffIndices desiredIndices(0, parameterIndices);
@@ -5770,7 +5774,7 @@ SILValue ADContext::promoteToDifferentiableFunction(
           builder.createReturn(loc, adfi);
         }
         retInst->eraseFromParent();
-        if (processAutoDiffFunctionInst(adfi))
+        if (processAutoDiffFunctionInst(adfi, newADFIs))
           return nullptr;
         auto *fn = builder.createFunctionRefFor(sourceFn->getLoc(), newF);
         SmallVector<SILValue, 8> newArgs;
@@ -5786,6 +5790,8 @@ SILValue ADContext::promoteToDifferentiableFunction(
 
   SILAutoDiffIndices desiredIndices(0, parameterIndices);
   SmallVector<SILValue, 2> assocFns;
+  bool isEscaping =
+      !origFnOperand->getType().castTo<SILFunctionType>()->isNoEscape();
   for (auto assocFnKind : {AutoDiffAssociatedFunctionKind::JVP,
                            AutoDiffAssociatedFunctionKind::VJP}) {
     auto assocFnAndIndices = emitAssociatedFunctionReference(
@@ -5802,17 +5808,20 @@ SILValue ADContext::promoteToDifferentiableFunction(
            "FIXME: We could emit a thunk that converts the VJP to have the "
            "desired indices.");
     auto assocFn = assocFnAndIndices->first;
-    builder.createRetainValue(loc, assocFn, builder.getDefaultAtomicity());
+    if (isEscaping)
+      builder.createRetainValue(loc, assocFn, builder.getDefaultAtomicity());
     assocFns.push_back(assocFn);
-    ValueLifetimeAnalysis vla(origFnOperand);
-                             
   }
 
-  return builder.createAutoDiffFunction(
+  auto *filledADFI = builder.createAutoDiffFunction(
       loc, parameterIndices, differentiationOrder, origFnOperand, assocFns);
+  newADFIs.push_back(filledADFI);
+  return filledADFI;
 }
 
-bool ADContext::processAutoDiffFunctionInst(AutoDiffFunctionInst *adfi) {
+bool ADContext::processAutoDiffFunctionInst(
+    AutoDiffFunctionInst *adfi,
+    SmallVectorImpl<AutoDiffFunctionInst *> &newADFIs) {
   if (adfi->getNumAssociatedFunctions() ==
       autodiff::getNumAutoDiffAssociatedFunctions(
           adfi->getDifferentiationOrder()))
@@ -5830,12 +5839,12 @@ bool ADContext::processAutoDiffFunctionInst(AutoDiffFunctionInst *adfi) {
     return inst;
   };
   auto invoker = getInvoker(adfi);
-  auto newADFI = promoteToDifferentiableFunction(
+  auto newDiffFn = promoteToDifferentiableFunction(
       builder, loc, adfi->getOriginalFunction(), adfi->getParameterIndices(),
-      adfi->getDifferentiationOrder(), invoker);
-  if (!newADFI)
+      adfi->getDifferentiationOrder(), invoker, newADFIs);
+  if (!newDiffFn)
     return true;
-  adfi->replaceAllUsesWith(newADFI);
+  adfi->replaceAllUsesWith(newDiffFn);
   adfi->eraseFromParent();
   transform.invalidateAnalysis(parent,
                                SILAnalysis::InvalidationKind::FunctionBody);
@@ -5850,26 +5859,26 @@ void Differentiation::run() {
 
   // Collect `[differentiable]` attributes and `autodiff_function` instructions
   // to process.
-  SmallVector<std::pair<SILFunction *,
-                        SILDifferentiableAttr *>, 8> diffAttrs;
-  SmallVector<AutoDiffFunctionInst *, 16> autodiffInsts;
+  SmallVector<SILDifferentiableAttr *, 32> diffAttrs;
+  SmallVector<AutoDiffFunctionInst *, 32> rawADFIs;
   // Handle all the instructions and attributes in the module that trigger
   // differentiation.
   for (SILFunction &f : module) {
     // If `f` has a `[differentiable]` attribute, it should become a
     // differentiation task.
     for (auto *diffAttr : f.getDifferentiableAttrs()) {
-      diffAttrs.push_back({&f, diffAttr});
+      diffAttrs.push_back(diffAttr);
       continue;
     }
     for (SILBasicBlock &bb : f)
       for (SILInstruction &i : bb)
         if (auto *adfi = dyn_cast<AutoDiffFunctionInst>(&i))
-          autodiffInsts.push_back(adfi);
+          if (!adfi->hasAssociatedFunctions())
+            rawADFIs.push_back(adfi);
   }
 
   // If nothing has triggered differentiation, there's nothing to do.
-  if (diffAttrs.empty() && autodiffInsts.empty())
+  if (diffAttrs.empty() && rawADFIs.empty())
     return;
 
   // AD relies on stdlib (the Swift module). If it's not imported, it's an
@@ -5886,15 +5895,35 @@ void Differentiation::run() {
   // For every `[differentiable]` attribute, create a differentiation task. If
   // the attribute has a primal and adjoint, this task will not synthesize
   // anything, but it's still needed as a lookup target.
-  for (auto &fnAndAttr : diffAttrs) {
+  for (auto *diffAttr : diffAttrs)
     context.registerDifferentiationTask(
-        fnAndAttr.first, fnAndAttr.second->getIndices(),
-        DifferentiationInvoker(fnAndAttr.second, fnAndAttr.first));
-  }
+        diffAttr->getOriginal(), diffAttr->getIndices(),
+        DifferentiationInvoker(diffAttr, diffAttr->getOriginal()));
 
   bool errorProcessingAutoDiffInsts = false;
-  for (auto *adfi : autodiffInsts)
-    errorProcessingAutoDiffInsts |= context.processAutoDiffFunctionInst(adfi);
+  SmallVector<AutoDiffFunctionInst *, 32> filledADFIs;
+  for (auto *adfi : rawADFIs)
+    errorProcessingAutoDiffInsts |=
+        context.processAutoDiffFunctionInst(adfi, filledADFIs);
+
+  // If the `@differentiable` closure created by an `autodiff_function`
+  // instruction is `@noescape`, the closure's lifetime must be ended within the
+  // function. We go to all lifetime ends of the `@differentiable` function and
+  // release the associated functions.
+  for (auto *adfi : filledADFIs) {
+    auto fnType = adfi->getType().castTo<SILFunctionType>();
+    if (fnType->isNoEscape()) {
+      ValueLifetimeAnalysis vla(adfi);
+      ValueLifetimeAnalysis::Frontier frontier;
+      vla.computeFrontier(frontier, ValueLifetimeAnalysis::DontModifyCFG);
+      for (auto *lifetimeEnd : frontier) {
+        SILBuilder builder(lifetimeEnd);
+        for (auto &assocFn : adfi->getAssociatedFunctions())
+          builder.createReleaseValue(lifetimeEnd->getLoc(), assocFn.get(),
+                                     builder.getDefaultAtomicity());
+      }
+    }
+  }
 
   auto cleanUp = [&]() {
     for (auto &task : context.getDifferentiationTasks())
