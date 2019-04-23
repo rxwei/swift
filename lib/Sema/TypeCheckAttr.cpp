@@ -2324,18 +2324,6 @@ void AttributeChecker::visitNonOverrideAttr(NonOverrideAttr *attr) {
 }
 
 // SWIFT_ENABLE_TENSORFLOW
-/// Returns true if the given type conforms to `Differentiable` in the given
-/// module.
-static bool conformsToDifferentiableInModule(Type type, ModuleDecl *module) {
-  auto &ctx = module->getASTContext();
-  auto *differentiableProto =
-      ctx.getProtocol(KnownProtocolKind::Differentiable);
-  return LookUpConformanceInModule(module)(
-      differentiableProto->getDeclaredInterfaceType()->getCanonicalType(),
-      type, differentiableProto).hasValue();
-};
-
-// SWIFT_ENABLE_TENSORFLOW
 static FuncDecl *resolveAutoDiffAssociatedFunction(
     TypeChecker &TC, DeclNameWithLoc specifier, AbstractFunctionDecl *original,
     Type expectedTy, std::function<bool(FuncDecl *)> isValid) {
@@ -2506,7 +2494,7 @@ static AutoDiffParameterIndices *computeDifferentiationParameters(
         selfType =
             derivativeGenEnv->mapTypeIntoContext(selfInterfaceType);
       }
-      if (!conformsToDifferentiableInModule(
+      if (!autodiff::conformsToDifferentiableInModule(
               selfType, function->getModuleContext())) {
         TC.diagnose(attrLoc, diag::diff_function_no_parameters,
                     function->getFullName())
@@ -2622,7 +2610,7 @@ static bool checkDifferentiationParameters(
       return true;
     }
     // Parameter must conform to `Differentiable`.
-    if (!conformsToDifferentiableInModule(wrtParamType, module)) {
+    if (!autodiff::conformsToDifferentiableInModule(wrtParamType, module)) {
       TC.diagnose(loc, diag::diff_params_clause_param_not_differentiable,
                   wrtParamType);
       return true;
@@ -2768,7 +2756,7 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
 
   // Returns true if a type conforms to `Differentiable`.
   auto conformsToDifferentiable = [&](Type type) {
-    return conformsToDifferentiableInModule(
+    return autodiff::conformsToDifferentiableInModule(
         type, original->getModuleContext());
   };
 
@@ -3396,7 +3384,7 @@ void AttributeChecker::visitFieldwiseDifferentiableAttr(
         diag::fieldwise_differentiable_only_on_differentiable_structs);
     return;
   }
-  if (!conformsToDifferentiableInModule(
+  if (!autodiff::conformsToDifferentiableInModule(
           structDecl->getDeclaredInterfaceType(), D->getModuleContext())) {
     diagnoseAndRemoveAttr(attr,
         diag::fieldwise_differentiable_only_on_differentiable_structs);
@@ -3420,7 +3408,7 @@ void AttributeChecker::visitNoDerivativeAttr(NoDerivativeAttr *attr) {
         diag::noderivative_only_on_stored_properties_in_differentiable_structs);
     return;
   }
-  if (!conformsToDifferentiableInModule(
+  if (!autodiff::conformsToDifferentiableInModule(
           structDecl->getDeclaredInterfaceType(), D->getModuleContext())) {
     diagnoseAndRemoveAttr(attr,
         diag::noderivative_only_on_stored_properties_in_differentiable_structs);

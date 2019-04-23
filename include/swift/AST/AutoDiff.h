@@ -343,6 +343,8 @@ enum class AutoDiffAssociatedVectorSpaceKind : unsigned {
 /// Automatic differentiation utility namespace.
 namespace autodiff {
 
+bool conformsToDifferentiableInModule(Type type, ModuleDecl *module);
+
 /// Returns the offset for an associated function at a specific differentiation
 /// order.
 /// This is used for both ordering in the `autodiff_function` instruction and

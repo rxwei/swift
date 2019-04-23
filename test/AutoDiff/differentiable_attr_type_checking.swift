@@ -704,3 +704,17 @@ struct NonDiffableStruct {
     return a + b
   }
 }
+
+// expected-error @+1 {{no differentiation parameters could be inferred; must differentiate with respect to at least one parameter conforming to 'Differentiable'}}
+@differentiable
+func hasConditionalConformingParameter(x: [Int]) -> Float {}
+
+// expected-error @+1 {{can only differentiate functions with results that conform to 'Differentiable', but '[Int]' does not conform to 'Differentiable'}}
+@differentiable
+func hasConditionalConformingResult(x: Float) -> [Int] {}
+
+extension Array {
+  @differentiable(wrt: self)
+  func nonDifferentiableSelf() -> Float {}
+}
+

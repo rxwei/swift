@@ -13,6 +13,7 @@
 #include "swift/AST/AutoDiff.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/Types.h"
+#include "swift/AST/ProtocolConformance.h"
 #include "swift/Basic/LLVM.h"
 #include "swift/Basic/Range.h"
 #include "llvm/ADT/STLExtras.h"
@@ -264,13 +265,28 @@ static unsigned getNumAutoDiffParameterIndices(AnyFunctionType *fnTy) {
 
 /// Returns true if the given type conforms to `Differentiable` in the given
 /// module.
-static bool conformsToDifferentiableInModule(Type type, ModuleDecl *module) {
+bool autodiff::conformsToDifferentiableInModule(Type type, ModuleDecl *module) {
   auto &ctx = module->getASTContext();
   auto *differentiableProto =
       ctx.getProtocol(KnownProtocolKind::Differentiable);
-  return LookUpConformanceInModule(module)(
+  auto conformance = LookUpConformanceInModule(module)(
       differentiableProto->getDeclaredInterfaceType()->getCanonicalType(),
-      type, differentiableProto).hasValue();
+      type, differentiableProto);
+  if (!conformance)
+    return false;
+  // Check for conditional conformances.
+  llvm::outs() << "Type: " << type << '\n';
+  type->dump(llvm::outs());
+  conformance->dump(llvm::outs());
+  if (conformance->isConcrete()) {
+    if (!conformance->getConditionalRequirementsIfAvailable())
+      return false;
+    for (auto conf : conformance->getConcrete()
+             ->getSubstitutions(module).getConformances())
+      if (conf.isInvalid())
+        return false;
+  }
+  return true;
 };
 
 AutoDiffParameterIndicesBuilder::AutoDiffParameterIndicesBuilder(
@@ -297,7 +313,7 @@ AutoDiffParameterIndicesBuilder::inferParameters(AnyFunctionType *functionType,
     if (paramType->is<AnyFunctionType>())
       return false;
     // Return true if the type conforms to `Differentiable`.
-    return conformsToDifferentiableInModule(paramType, module);
+    return autodiff::conformsToDifferentiableInModule(paramType, module);
   };
 
   // Get all parameter types.
