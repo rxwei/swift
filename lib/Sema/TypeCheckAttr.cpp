@@ -2486,7 +2486,12 @@ static AutoDiffParameterIndices *computeDifferentiationParameters(
     // If function is an instance method, diagnose only if `self` does not
     // conform to `Differentiable`.
     else {
-      auto selfType = function->getImplicitSelfDecl()->getInterfaceType();
+      auto *DC = function->getDeclContext();
+      auto *typeCtx = function->getInnermostTypeContext();
+      auto selfType = DC->mapTypeIntoContext(typeCtx->getSelfInterfaceType());
+      llvm::outs() << "*** MAPPED SELF TYPE = " << selfType << '\n';
+      selfType->dump(llvm::outs());
+
       if (derivativeGenEnv) {
         auto selfInterfaceType = selfType->hasTypeParameter()
             ? selfType
@@ -2494,8 +2499,14 @@ static AutoDiffParameterIndices *computeDifferentiationParameters(
         selfType =
             derivativeGenEnv->mapTypeIntoContext(selfInterfaceType);
       }
-      if (!autodiff::conformsToDifferentiableInModule(
-              selfType, function->getModuleContext())) {
+
+      llvm::outs() << "*** MAPPED SELF TYPE = " << selfType << '\n';
+      selfType->dump(llvm::outs());
+
+      if (!TypeChecker::conformsToProtocol(
+              selfType,
+              TC.Context.getProtocol(KnownProtocolKind::Differentiable),
+              function, ConformanceCheckFlags::Used)) {
         TC.diagnose(attrLoc, diag::diff_function_no_parameters,
                     function->getFullName())
             .highlight(function->getSignatureSourceRange());
@@ -2567,9 +2578,10 @@ static AutoDiffParameterIndices *computeDifferentiationParameters(
 // The parsed differentiation parameters and attribute location are used in
 // diagnostics.
 static bool checkDifferentiationParameters(
-    TypeChecker &TC, AutoDiffParameterIndices *indices,
-    AnyFunctionType *functionType, GenericEnvironment *derivativeGenEnv,
-    ModuleDecl *module, ArrayRef<ParsedAutoDiffParameter> parsedWrtParams,
+    TypeChecker &TC, AbstractFunctionDecl *AFD,
+    AutoDiffParameterIndices *indices, AnyFunctionType *functionType,
+    GenericEnvironment *derivativeGenEnv, ModuleDecl *module,
+    ArrayRef<ParsedAutoDiffParameter> parsedWrtParams,
     SourceLoc attrLoc) {
   // Diagnose empty parameter indices. This occurs when no `wrt` clause is
   // declared and no differentiation parameters can be inferred.
@@ -2610,7 +2622,10 @@ static bool checkDifferentiationParameters(
       return true;
     }
     // Parameter must conform to `Differentiable`.
-    if (!autodiff::conformsToDifferentiableInModule(wrtParamType, module)) {
+    if (!TC.conformsToProtocol(
+            wrtParamType,
+            TC.Context.getProtocol(KnownProtocolKind::Differentiable),
+            AFD, ConformanceCheckFlags::Used)) {
       TC.diagnose(loc, diag::diff_params_clause_param_not_differentiable,
                   wrtParamType);
       return true;
@@ -2779,8 +2794,9 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
 
   // Check if differentiation parameter indices are valid.
   if (checkDifferentiationParameters(
-          TC, checkedWrtParamIndices, derivativeFnTy, whereClauseGenEnv,
-          original->getModuleContext(), parsedWrtParams, attr->getLocation())) {
+          TC, original, checkedWrtParamIndices, derivativeFnTy,
+          whereClauseGenEnv, original->getModuleContext(), parsedWrtParams,
+          attr->getLocation())) {
     attr->setInvalid();
     return;
   }
@@ -3131,7 +3147,7 @@ void AttributeChecker::visitDifferentiatingAttr(DifferentiatingAttr *attr) {
 
   // Check if differentiation parameter indices are valid.
   if (checkDifferentiationParameters(
-          TC, checkedWrtParamIndices, originalFnType,
+          TC, originalFn, checkedWrtParamIndices, originalFnType,
           derivative->getGenericEnvironment(), derivative->getModuleContext(),
           parsedWrtParams, attr->getLocation())) {
     attr->setInvalid();

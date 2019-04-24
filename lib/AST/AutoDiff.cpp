@@ -275,14 +275,22 @@ bool autodiff::conformsToDifferentiableInModule(Type type, ModuleDecl *module) {
   if (!conformance)
     return false;
   // Check for conditional conformances.
-  llvm::outs() << "Type: " << type << '\n';
+  llvm::outs() << "\n\nType: " << type << '\n';
   type->dump(llvm::outs());
   conformance->dump(llvm::outs());
   if (conformance->isConcrete()) {
     if (!conformance->getConditionalRequirementsIfAvailable())
       return false;
-    for (auto conf : conformance->getConcrete()
-             ->getSubstitutions(module).getConformances())
+    auto concrete = conformance->getConcrete();
+    auto subMap = concrete->getSubstitutions(module);
+    for (auto req : concrete->getConditionalRequirements()) {
+      llvm::outs() << "Conditional requirements: ";
+      req.dump(llvm::outs());
+      //type->getContextSubstitutionMap(module, )
+      llvm::outs() << "Substituted submap: ";
+
+    }
+    for (auto conf : subMap.getConformances())
       if (conf.isInvalid())
         return false;
   }
