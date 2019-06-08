@@ -3448,6 +3448,10 @@ public:
     return {const_cast<Cleanup *>(this)->getChildrenData(), numChildren};
   }
 
+  SILValue getValue() const {
+    return value;
+  }
+
   /// Disable this cleanup and makes its application a no-op.
   void disable() {
     func = nullptr;
@@ -3688,10 +3692,8 @@ private:
   /// Mapping from original basic blocks to dominated active values.
   DenseMap<SILBasicBlock *, SmallVector<SILValue, 8>> activeValues;
 
-  /// Local adjoint values to be cleaned up. This is populated when adjoint
-  /// emission is run on one basic block and cleaned before processing another
-  /// basic block.
-  SmallVector<AdjointValue, 8> blockLocalAdjointValues;
+  /// All cleanups.
+  SmallVector<Cleanup *, 8> cleanups;
 
   /// Mapping from original basic blocks and original active values to
   /// corresponding adjoint block arguments.
@@ -3801,7 +3803,7 @@ private:
   // Memory cleanup tools
   //--------------------------------------------------------------------------//
 
-  void emitCleanupForAdjointValue(AdjointValue value);
+  void emitAllCleanups();
 
   //--------------------------------------------------------------------------//
   // Accumulator
@@ -3914,9 +3916,8 @@ private:
     auto it = insertion.first;
     auto &&existingValue = it->getSecond();
     valueMap.erase(it);
-    auto adjVal = accumulateAdjointsDirect(existingValue, newAdjointValue);
-    initializeAdjointValue(origBB, originalValue, adjVal);
-    blockLocalAdjointValues.push_back(adjVal);
+    initializeAdjointValue(origBB, originalValue,
+        accumulateAdjointsDirect(existingValue, newAdjointValue));
   }
 
   /// Get the adjoint block argument corresponding to the given original block
@@ -4394,7 +4395,6 @@ public:
               // Emit cleanups for children.
               if (auto *cleanup = concreteActiveValueAdj.getCleanup()) {
                 cleanup->disable();
-                cleanup->applyRecursively(builder, adjLoc);
               }
               trampolineArguments.push_back(concreteActiveValueAdj);
               // If the adjoint block does not yet have a registered adjoint
@@ -4431,10 +4431,6 @@ public:
             getPullbackInfo().lookUpPredecessorEnumElement(predBB, bb);
         adjointSuccessorCases.push_back({enumEltDecl, adjointSuccBB});
       }
-      // Emit clenaups for all block-local adjoint values.
-      for (auto adjVal : blockLocalAdjointValues)
-        emitCleanupForAdjointValue(adjVal);
-      blockLocalAdjointValues.clear();
       // - If the original block has exactly one predecessor, then the adjoint
       //   block has exactly one successor. Extract the pullback struct value
       //   from the predecessor enum value using `unchecked_enum_data` and
@@ -4487,9 +4483,6 @@ public:
           LLVM_DEBUG(getADDebugStream() << "Disabling cleanup for "
                      << val.getValue() << "for return\n");
           cleanup->disable();
-          LLVM_DEBUG(getADDebugStream() << "Applying "
-                     << cleanup->getNumChildren() << " child cleanups\n");
-          cleanup->applyRecursively(builder, adjLoc);
         }
         retElts.push_back(val);
       } else {
@@ -4502,10 +4495,6 @@ public:
     // Collect differentiation parameter adjoints.
     for (auto i : getIndices().parameters->getIndices())
       addRetElt(i);
-    // Emit cleanups for all local values.
-    for (auto adjVal : blockLocalAdjointValues)
-      emitCleanupForAdjointValue(adjVal);
-    blockLocalAdjointValues.clear();
 
     // Disable cleanup for original indirect parameter adjoint buffers.
     // Copy them to adjoint indirect results.
@@ -4525,11 +4514,13 @@ public:
       // Assert that local allocations have at least one use.
       // Buffers should not be allocated needlessly.
       assert(!alloc.getValue()->use_empty());
-      if (auto *cleanup = alloc.getCleanup())
-        cleanup->applyRecursively(builder, adjLoc);
+//      if (auto *cleanup = alloc.getCleanup())
+//        cleanup->applyRecursively(builder, adjLoc);
       builder.createDeallocStack(adjLoc, alloc);
     }
     builder.createReturn(adjLoc, joinElements(retElts, builder, adjLoc));
+
+    emitAllCleanups();
 
     LLVM_DEBUG(getADDebugStream() << "Generated adjoint for "
                                   << original.getName() << ":\n" << adjoint);
@@ -5102,7 +5093,9 @@ Cleanup *AdjointEmitter::makeCleanup(SILValue value, Cleanup::Func func,
   SmallVector<Cleanup *, 2> nonnullChildren;
   for (auto *c : children)
     if (c) nonnullChildren.push_back(c);
-  return Cleanup::create(allocator, value, func, nonnullChildren);
+  auto *cleanup = Cleanup::create(allocator, value, func, nonnullChildren);
+  cleanups.push_back(cleanup);
+  return cleanup;
 }
 
 Cleanup *AdjointEmitter::makeCleanupFromChildren(ArrayRef<Cleanup *> children) {
@@ -5296,22 +5289,17 @@ SILValue AdjointEmitter::emitZeroDirect(CanType type, SILLocation loc) {
   return loaded;
 }
 
-void AdjointEmitter::emitCleanupForAdjointValue(AdjointValue value) {
-  switch (value.getKind()) {
-  case AdjointValueKind::Zero: return;
-  case AdjointValueKind::Aggregate:
-    for (auto element : value.getAggregateElements())
-      emitCleanupForAdjointValue(element);
-    break;
-  case AdjointValueKind::Concrete: {
-    auto concrete = value.getConcreteValue();
-    auto *cleanup = concrete.getCleanup();
-    LLVM_DEBUG(getADDebugStream() << "Applying "
-               << cleanup->getNumChildren() << " for value "
-               << concrete.getValue() << " child cleanups\n");
-    cleanup->applyRecursively(builder, concrete.getLoc());
-    break;
-  }
+void AdjointEmitter::emitAllCleanups() {
+  SILBuilder cleanupBuilder(getAdjoint());
+  for (auto *cleanup : reversed(cleanups)) {
+    LLVM_DEBUG(getADDebugStream() << "Emit cleanup for "
+               << cleanup->getValue() << '\n');
+    if (!cleanup->getValue())
+      continue;
+    auto *parentTerm = cleanup->getValue()->getParentBlock()->getTerminator();
+    assert(parentTerm);
+    cleanupBuilder.setInsertionPoint(parentTerm);
+    cleanup->apply(cleanupBuilder, cleanup->getValue().getLoc());
   }
 }
 
