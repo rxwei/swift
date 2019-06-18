@@ -57,6 +57,17 @@ public extension VectorProtocol where VectorSpaceScalar: SignedNumeric {
   }
 }
 
+public protocol PointwiseMultiplicativeArithmetic : AdditiveArithmetic {
+  static func .* (lhs: Self, rhs: Self) -> Self
+  static func .*= (lhs: inout Self, rhs: Self)
+}
+
+public extension PointwiseMultiplicativeArithmetic {
+  static func .*= (lhs: inout Self, rhs: Self) {
+    lhs = lhs .* rhs
+  }
+}
+
 /// A type that mathematically represents a differentiable manifold whose
 /// tangent spaces are finite-dimensional.
 public protocol Differentiable {
