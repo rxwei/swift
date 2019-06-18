@@ -87,4 +87,12 @@ CustomDerivativesTests.test("ModifyGradientOfSum") {
   })
 }
 
+CustomDerivativesTests.test("CustomProperty") {
+  struct Foo: Differentiable & AdditiveArithmetic {
+    @WithCustomDerivative(initialValue: 4, derivativeTransform: { v in v * 100 })
+    var x: Float
+  }
+  expectEqual(Foo(x: 400), gradient(at: Foo()) { f in f.x * f.x })
+}
+
 runAllTests()

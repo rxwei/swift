@@ -669,3 +669,49 @@ public struct AnyDerivative : Differentiable & AdditiveArithmetic {
     _box._move(along: direction._box)
   }
 }
+
+@_propertyWrapper
+public struct WithCustomDerivative<Value : Differentiable> : Differentiable {
+  public typealias TangentVector = Value.TangentVector
+
+  @usableFromInline
+  internal var underlyingValue: Value
+
+  @noDerivative
+  @usableFromInline
+  internal let derivativeTransform: (Value.TangentVector) -> Value.TangentVector
+
+  // FIXME: Remove when `AllDifferentiableVariables` gets removed.
+  public typealias AllDifferentiableVariables = Value.AllDifferentiableVariables
+  public var allDifferentiableVariables: AllDifferentiableVariables {
+    _read { yield underlyingValue.allDifferentiableVariables }
+    _modify { yield &underlyingValue.allDifferentiableVariables }
+  }
+
+  @inlinable
+  public var value: Value {
+    @differentiable(vjp: _vjpValue where Value : Differentiable)
+    @inline(__always)
+    get { underlyingValue }
+    @inline(__always)
+    _modify { yield &underlyingValue }
+  }
+
+  public init(
+    initialValue: Value,
+    derivativeTransform: @escaping (Value.TangentVector) -> Value.TangentVector
+  ) {
+    self.underlyingValue = initialValue
+    self.derivativeTransform = derivativeTransform
+  }
+
+  public mutating func move(along direction: TangentVector) {
+    underlyingValue.move(along: direction)
+  }
+
+  @usableFromInline
+  func _vjpValue() -> (value: Value,
+                       pullback: (TangentVector) -> TangentVector) {
+    (value, derivativeTransform)
+  }
+}
