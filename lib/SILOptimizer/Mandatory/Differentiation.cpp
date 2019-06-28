@@ -2838,55 +2838,6 @@ public:
     Lowering::GenericContextScope genericContextScope(
         module.Types, origTy->getGenericSignature());
 
-    // Given a type, returns its formal SIL parameter info.
-    auto getTangentParameterInfoForOriginalResult = [&](
-        CanType tanType, ResultConvention origResConv) -> SILParameterInfo {
-      auto &tl = context.getTypeConverter().getTypeLowering(
-          tanType, ResilienceExpansion::Minimal);
-      ParameterConvention conv;
-      switch (origResConv) {
-      case ResultConvention::Owned:
-      case ResultConvention::Autoreleased:
-        conv = tl.isTrivial()
-            ? ParameterConvention::Direct_Unowned
-            : ParameterConvention::Direct_Guaranteed;
-        break;
-      case ResultConvention::Unowned:
-      case ResultConvention::UnownedInnerPointer:
-        conv = ParameterConvention::Direct_Unowned;
-        break;
-      case ResultConvention::Indirect:
-        conv = ParameterConvention::Indirect_In_Guaranteed;
-        break;
-      }
-      return {tanType, conv};
-    };
-
-    // Given a type, returns its formal SIL result info.
-    auto getTangentResultInfoForOriginalParameter = [&](
-        CanType tanType, ParameterConvention origParamConv) -> SILResultInfo {
-      auto &tl = context.getTypeConverter().getTypeLowering(
-          tanType, ResilienceExpansion::Minimal);
-      ResultConvention conv;
-      switch (origParamConv) {
-      case ParameterConvention::Direct_Owned:
-      case ParameterConvention::Direct_Guaranteed:
-      case ParameterConvention::Direct_Unowned:
-        conv = tl.isTrivial()
-            ? ResultConvention::Unowned
-            : ResultConvention::Owned;
-        break;
-      case ParameterConvention::Indirect_In:
-      case ParameterConvention::Indirect_Inout:
-      case ParameterConvention::Indirect_In_Constant:
-      case ParameterConvention::Indirect_In_Guaranteed:
-      case ParameterConvention::Indirect_InoutAliasable:
-        conv = ResultConvention::Indirect;
-        break;
-      }
-      return {tanType, conv};
-    };
-
     // Parameters of the pullback are:
     // - a seed,
     // - a pullback struct,
@@ -2904,7 +2855,8 @@ public:
     pbParams.push_back(getTangentParameterInfoForOriginalResult(
         origResInfo.getType()
             ->getAutoDiffAssociatedTangentSpace(lookupConformance)
-            ->getCanonicalType(), origResInfo.getConvention()));
+            ->getCanonicalType(),
+         ParameterConvention::Indirect_In_Guaranteed});
 
     // Accept a pullback struct in the pullback parameter list. This is the
     // returned pullback's closure context.
@@ -2917,10 +2869,11 @@ public:
     // Add pullback results for the requested wrt parameters.
     for (auto i : indices.parameters->getIndices()) {
       auto origParam = origParams[i];
-      adjResults.push_back(getTangentResultInfoForOriginalParameter(
-          origParam.getType()
+      adjResults.push_back(
+          {origParam.getType()
               ->getAutoDiffAssociatedTangentSpace(lookupConformance)
-              ->getCanonicalType(), origParam.getConvention()));
+              ->getCanonicalType(),
+           ResultConvention::Indirect});
     }
 
     auto pbName = original->getASTContext()
