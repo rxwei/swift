@@ -4082,6 +4082,7 @@ private:
   ///
   /// This method first tries to find an entry in `adjointMap`. If an adjoint
   /// doesn't exist, create a zero adjoint.
+  [[deprecated]]
   AdjointValue getAdjointValue(SILBasicBlock *origBB, SILValue originalValue) {
     assert(origBB->getParent() == &getOriginal());
     assert(originalValue->getType().isObject());
@@ -4196,7 +4197,7 @@ private:
     return it;
   }
 
-  SILValue makeLocalAllocation(SILLocation loc) {
+  SILValue makeLocalAllocation(SILLocation loc, SILType type) {
     // Set insertion point for local allocation builder: before the last local
     // allocation, or at the start of the adjoint function's entry if no local
     // allocations exist yet.
@@ -4204,47 +4205,41 @@ private:
         getAdjoint().getEntryBlock(),
         getNextFunctionLocalAllocationInsertionPoint());
     // Allocate local buffer and initialize to zero.
-    auto *newBuf = localAllocBuilder.createAllocStack(
-        originalBuffer.getLoc(),
-                                                      getRemappedTangentType(originalBuffer->getType()));
-    auto *access = localAllocBuilder.createBeginAccess(
-                                                       newBuf->getLoc(), newBuf, SILAccessKind::Init,
-                                                       SILAccessEnforcement::Static, /*noNestedConflict*/ true,
-                                                       /*fromBuiltin*/ false);
-    // Temporarily change global builder insertion point and emit zero into the
-    // local buffer.
-    auto insertionPoint = builder.getInsertionBB();
-    builder.setInsertionPoint(
-                              localAllocBuilder.getInsertionBB(),
-                              localAllocBuilder.getInsertionPoint());
+    return localAllocBuilder.createAllocStack(loc, type);
   }
 
   ValueWithCleanup &getAdjointBuffer(SILBasicBlock *origBB,
-                                     SILValue originalBuffer) {
-    assert(originalBuffer->getType().isAddress());
-    assert(originalBuffer->getFunction() == &getOriginal());
-    auto insertion = bufferMap.try_emplace({origBB, originalBuffer},
+                                     SILValue valueInOriginal) {
+    assert(valueInOriginal->getFunction() == &getOriginal());
+    auto insertion = bufferMap.try_emplace({origBB, valueInOriginal},
                                            ValueWithCleanup(SILValue()));
     if (!insertion.second) // not inserted
       return insertion.first->getSecond();
 
     // Diagnose `struct_element_addr` instructions to `@noDerivative` fields.
-    if (auto *seai = dyn_cast<StructElementAddrInst>(originalBuffer)) {
-      if (seai->getField()->getAttrs().hasAttribute<NoDerivativeAttr>()) {
-        getContext().emitNondifferentiabilityError(
-            originalBuffer, getInvoker(),
-            diag::autodiff_noderivative_stored_property);
-        errorOccurred = true;
-        return (bufferMap[{origBB, originalBuffer}] = ValueWithCleanup());
-      }
+    VarDecl *noDerivativeField = nullptr;
+    if (auto *seai = dyn_cast<StructElementAddrInst>(valueInOriginal)) {
+      if (seai->getField()->getAttrs().hasAttribute<NoDerivativeAttr>())
+        noDerivativeField = seai->getField();
+    }
+    else if (auto *sei = dyn_cast<StructExtractInst>(valueInOriginal)) {
+      if (sei->getField()->getAttrs().hasAttribute<NoDerivativeAttr>())
+        noDerivativeField = sei->getField();
+    }
+    if (noDerivativeField) {
+      getContext().emitNondifferentiabilityError(
+          valueInOriginal, getInvoker(),
+          diag::autodiff_noderivative_stored_property);
+      errorOccurred = true;
+      return (bufferMap[{origBB, valueInOriginal}] = ValueWithCleanup());
     }
 
     // If the original buffer is a projection, return a corresponding projection
     // into the adjoint buffer.
-    if (auto adjProj = getAdjointProjection(origBB, originalBuffer)) {
+    if (auto adjProj = getAdjointProjection(origBB, valueInOriginal)) {
       ValueWithCleanup projWithCleanup(
           adjProj, makeCleanup(adjProj, /*cleanup*/ nullptr));
-      return (bufferMap[{origBB, originalBuffer}] = projWithCleanup);
+      return (bufferMap[{origBB, valueInOriginal}] = projWithCleanup);
     }
 
     // Set insertion point for local allocation builder: before the last local
@@ -4255,8 +4250,13 @@ private:
         getNextFunctionLocalAllocationInsertionPoint());
     // Allocate local buffer and initialize to zero.
     auto *newBuf = localAllocBuilder.createAllocStack(
-        originalBuffer.getLoc(),
-        getRemappedTangentType(originalBuffer->getType()));
+        valueInOriginal.getLoc(),
+        getRemappedTangentType(valueInOriginal->getType()));
+    // Temporarily change global builder insertion point and emit zero into the
+    // local buffer.
+    builder.setInsertionPoint(
+        localAllocBuilder.getInsertionBB(),
+        localAllocBuilder.getInsertionPoint());
     auto *access = localAllocBuilder.createBeginAccess(
         newBuf->getLoc(), newBuf, SILAccessKind::Init,
         SILAccessEnforcement::Static, /*noNestedConflict*/ true,
@@ -4264,9 +4264,8 @@ private:
     // Temporarily change global builder insertion point and emit zero into the
     // local buffer.
     auto insertionPoint = builder.getInsertionBB();
-    builder.setInsertionPoint(
-        localAllocBuilder.getInsertionBB(),
-        localAllocBuilder.getInsertionPoint());
+    builder.setInsertionPoint(localAllocBuilder.getInsertionBB(),
+                              localAllocBuilder.getInsertionPoint());
     emitZeroIndirect(access->getType().getASTType(), access, access->getLoc());
     builder.setInsertionPoint(insertionPoint);
     localAllocBuilder.createEndAccess(
@@ -4602,7 +4601,7 @@ public:
         bbArg->getSingleTerminatorOperands(incomingValues);
         // Initialize adjoint value of predecessor terminator operands as
         // adjoint value of current block arguments.
-        auto bbArgAdj = getAdjointValue(bb, bbArg);
+        auto bbArgAdj = getAdjointBuffer(bb, bbArg);
         for (auto pair : incomingValues) {
           auto *predBB = std::get<0>(pair);
           auto incomingValue = std::get<1>(pair);
@@ -5526,6 +5525,7 @@ AdjointValue PullbackEmitter::makeAggregateAdjointValue(
   return AdjointValue::createAggregate(allocator, remapType(type), elements);
 }
 
+[[deprecated]]
 ValueWithCleanup PullbackEmitter::materializeAdjointDirect(
     AdjointValue val, SILLocation loc) {
   assert(val.getType().isObject());
