@@ -2852,8 +2852,8 @@ public:
 
     // Add pullback parameter for the seed.
     auto origResInfo = origTy->getResults()[indices.source];
-    pbParams.push_back(getTangentParameterInfoForOriginalResult(
-        origResInfo.getType()
+    pbParams.push_back(
+        {origResInfo.getType()
             ->getAutoDiffAssociatedTangentSpace(lookupConformance)
             ->getCanonicalType(),
          ParameterConvention::Indirect_In_Guaranteed});
@@ -4202,7 +4202,7 @@ private:
     // allocation, or at the start of the adjoint function's entry if no local
     // allocations exist yet.
     localAllocBuilder.setInsertionPoint(
-        getAdjoint().getEntryBlock(),
+        getPullback().getEntryBlock(),
         getNextFunctionLocalAllocationInsertionPoint());
     // Allocate local buffer and initialize to zero.
     return localAllocBuilder.createAllocStack(loc, type);
@@ -4601,7 +4601,8 @@ public:
         bbArg->getSingleTerminatorOperands(incomingValues);
         // Initialize adjoint value of predecessor terminator operands as
         // adjoint value of current block arguments.
-        auto bbArgAdj = getAdjointBuffer(bb, bbArg);
+        auto bbArgAdj = getAdjointValue(bb, bbArg);
+        // auto bbArgAdj = getAdjointBuffer(bb, bbArg);
         for (auto pair : incomingValues) {
           auto *predBB = std::get<0>(pair);
           auto incomingValue = std::get<1>(pair);
@@ -5788,6 +5789,84 @@ PullbackEmitter::accumulateAdjoints(AdjointValue lhs,
       return makeAggregateAdjointValue(lhs.getType(), newElements);
     }
     }
+  }
+}
+
+[[deprecated]]
+SILValue PullbackEmitter::accumulateDirect(SILValue lhs, SILValue rhs) {
+  // TODO: Optimize for the case when lhs == rhs.
+  LLVM_DEBUG(getADDebugStream() <<
+             "Emitting adjoint accumulation for lhs: " << lhs <<
+             " and rhs: " << rhs << "\n");
+  assert(lhs->getType() == rhs->getType() && "Adjoints must have equal types!");
+  assert(lhs->getType().isObject() && rhs->getType().isObject() &&
+         "Adjoint types must be both object types!");
+  auto adjointTy = lhs->getType();
+  auto adjointASTTy = adjointTy.getASTType();
+  auto loc = lhs.getLoc();
+  auto tangentSpace = getTangentSpace(adjointASTTy);
+  assert(tangentSpace && "No tangent space for this type");
+  switch (tangentSpace->getKind()) {
+  case VectorSpace::Kind::Vector: {
+    // Allocate buffers for inputs and output.
+    auto *resultBuf = builder.createAllocStack(loc, adjointTy);
+    auto *lhsBuf = builder.createAllocStack(loc, adjointTy);
+    auto *rhsBuf = builder.createAllocStack(loc, adjointTy);
+    // Initialize input buffers.
+    auto *lhsBufInitAccess = builder.createBeginAccess(
+        loc, lhsBuf, SILAccessKind::Init, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    auto *rhsBufInitAccess = builder.createBeginAccess(
+        loc, rhsBuf, SILAccessKind::Init, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    builder.createStore(loc, lhs, lhsBufInitAccess,
+                        getBufferSOQ(adjointASTTy, getPullback()));
+    builder.createStore(loc, rhs, rhsBufInitAccess,
+                        getBufferSOQ(adjointASTTy, getPullback()));
+    builder.createEndAccess(loc, lhsBufInitAccess, /*aborted*/ false);
+    builder.createEndAccess(loc, rhsBufInitAccess, /*aborted*/ false);
+    // Accumulate the adjoints.
+    auto *resultBufAccess = builder.createBeginAccess(
+        loc, resultBuf, SILAccessKind::Init, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    auto *lhsBufReadAccess = builder.createBeginAccess(loc, lhsBuf,
+        SILAccessKind::Read, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    auto *rhsBufReadAccess = builder.createBeginAccess(loc, rhsBuf,
+        SILAccessKind::Read, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    accumulateIndirect(resultBufAccess, lhsBufReadAccess, rhsBufReadAccess);
+    builder.createEndAccess(loc, resultBufAccess, /*aborted*/ false);
+    builder.createEndAccess(loc, rhsBufReadAccess, /*aborted*/ false);
+    builder.createEndAccess(loc, lhsBufReadAccess, /*aborted*/ false);
+    // Deallocate input buffers.
+    builder.createDeallocStack(loc, rhsBuf);
+    builder.createDeallocStack(loc, lhsBuf);
+    // Load result.
+    resultBufAccess = builder.createBeginAccess(loc, resultBuf,
+        SILAccessKind::Read, SILAccessEnforcement::Static,
+        /*noNestedConflict*/ true, /*fromBuiltin*/ false);
+    auto val = builder.createLoad(loc, resultBufAccess,
+        getBufferLOQ(lhs->getType().getASTType(), getPullback()));
+    builder.createEndAccess(loc, resultBufAccess, /*aborted*/ false);
+    // Deallocate result buffer.
+    builder.createDeallocStack(loc, resultBuf);
+    return val;
+  }
+  case VectorSpace::Kind::Tuple: {
+    auto tupleType = tangentSpace->getTuple();
+    SmallVector<SILValue, 8> adjElements;
+    for (unsigned i : range(tupleType->getNumElements())) {
+      auto *eltLHS = builder.createTupleExtract(loc, lhs, i);
+      auto *eltRHS = builder.createTupleExtract(loc, rhs, i);
+      adjElements.push_back(accumulateDirect(eltLHS, eltRHS));
+    }
+    return builder.createTuple(loc, adjointTy, adjElements);
+  }
+  case VectorSpace::Kind::Function: {
+    llvm_unreachable(
+      "Unimplemented: Emit thunks for abstracting adjoint accumulation");
+  }
   }
 }
 
