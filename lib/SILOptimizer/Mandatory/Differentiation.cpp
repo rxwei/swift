@@ -4668,10 +4668,10 @@ public:
               auto concreteActiveValueAdj =
                   materializeAdjointDirect(activeValueAdj, adjLoc);
               // Emit cleanups for children.
-              if (auto *cleanup = concreteActiveValueAdj.getCleanup()) {
-                cleanup->disable();
-                cleanup->applyRecursively(builder, adjLoc);
-              }
+//              if (auto *cleanup = concreteActiveValueAdj.getCleanup()) {
+//                cleanup->disable();
+//                cleanup->applyRecursively(builder, adjLoc);
+//              }
               trampolineArguments.push_back(concreteActiveValueAdj);
               // If the adjoint block does not yet have a registered adjoint
               // value for the active value, set the adjoint value to the
@@ -4770,14 +4770,14 @@ public:
       if (origParam->getType().isObject()) {
         auto adjVal = getAdjointValue(origEntry, origParam);
         auto val = materializeAdjointDirect(adjVal, adjLoc);
-        if (auto *cleanup = val.getCleanup()) {
-          LLVM_DEBUG(getADDebugStream() << "Disabling cleanup for "
-                     << val.getValue() << "for return\n");
-          cleanup->disable();
-          LLVM_DEBUG(getADDebugStream() << "Applying "
-                     << cleanup->getNumChildren() << " child cleanups\n");
-          cleanup->applyRecursively(builder, adjLoc);
-        }
+//        if (auto *cleanup = val.getCleanup()) {
+//          LLVM_DEBUG(getADDebugStream() << "Disabling cleanup for "
+//                     << val.getValue() << "for return\n");
+//          cleanup->disable();
+//          LLVM_DEBUG(getADDebugStream() << "Applying "
+//                     << cleanup->getNumChildren() << " child cleanups\n");
+//          cleanup->applyRecursively(builder, adjLoc);
+//        }
         retElts.push_back(val);
       } else {
         auto adjBuf = getAdjointBuffer(origEntry, origParam);
@@ -4811,8 +4811,8 @@ public:
       // Assert that local allocations have at least one use.
       // Buffers should not be allocated needlessly.
       assert(!alloc.getValue()->use_empty());
-      if (auto *cleanup = alloc.getCleanup())
-        cleanup->applyRecursively(builder, adjLoc);
+//      if (auto *cleanup = alloc.getCleanup())
+//        cleanup->applyRecursively(builder, adjLoc);
       builder.createDeallocStack(adjLoc, alloc);
     }
     builder.createReturn(adjLoc, joinElements(retElts, builder, adjLoc));
@@ -5727,11 +5727,12 @@ void PullbackEmitter::emitCleanupForAdjointValue(AdjointValue value) {
     break;
   case AdjointValueKind::Concrete: {
     auto concrete = value.getConcreteValue();
-    auto *cleanup = concrete.getCleanup();
-    LLVM_DEBUG(getADDebugStream() << "Applying "
-               << cleanup->getNumChildren() << " for value "
-               << concrete.getValue() << " child cleanups\n");
-    cleanup->applyRecursively(builder, concrete.getLoc());
+    emitCleanup(builder, concrete.getLoc(), concrete);
+//    auto *cleanup = concrete.getCleanup();
+//    LLVM_DEBUG(getADDebugStream() << "Applying "
+//               << cleanup->getNumChildren() << " for value "
+//               << concrete.getValue() << " child cleanups\n");
+//    cleanup->applyRecursively(builder, concrete.getLoc());
     break;
   }
   }
