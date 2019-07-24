@@ -4521,6 +4521,9 @@ public:
       //    of the current block.
       SmallVector<std::pair<EnumElementDecl *, SILBasicBlock *>, 4>
           pullbackSuccessorCases;
+      // A set that remmebers what trampoline arguments have already been
+      // retained. Each tampoline argument should be retained exactly once.
+      SmallSet<SILValue, 8> retainedTrampolineArgs;
       for (auto *predBB : bb->getPredecessorBlocks()) {
         // Get the pullback block and optional pullback trampoline block of the
         // predecessor block.
@@ -4550,9 +4553,12 @@ public:
               auto activeValueAdj = getAdjointValue(bb, activeValue);
               auto concreteActiveValueAdj =
                   materializeAdjointDirect(activeValueAdj, pbLoc);
-              builder.createRetainValue(pbLoc, concreteActiveValueAdj,
-                                        builder.getDefaultAtomicity());
               trampolineArguments.push_back(concreteActiveValueAdj);
+              auto insertion =
+                  retainedTrampolineArgs.insert(concreteActiveValueAdj);
+              if (insertion.second)
+                builder.createRetainValue(pbLoc, concreteActiveValueAdj,
+                                          builder.getDefaultAtomicity());
               // If the pullback block does not yet have a registered adjoint
               // value for the active value, set the adjoint value to the
               // forwarded adjoint value argument.

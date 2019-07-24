@@ -9,7 +9,7 @@ import DifferentiationUnittest
 var LeakCheckingTests = TestSuite("LeakChecking")
 
 /// Execute body and check expected leak count.
-func testWithLeakChecking(
+func withLeakChecking(
   expectedLeakCount: Int = 0, file: String = #file, line: UInt = #line,
   _ body: () -> Void
 ) {
@@ -23,6 +23,20 @@ func testWithLeakChecking(
   expectEqual(
     expectedLeakCount, leakCount, "Leaks detected: \(leakCount)",
     file: file, line: line)
+}
+
+extension TestSuite {
+  func testWithLeakChecking(
+    _ name: String,
+    expectedLeakCount: Int = 0,
+    file: String = #file, line: UInt = #line,
+    _ testFunction: @escaping () -> Void
+  ) {
+    test(name, file: file, line: line) {
+      withLeakChecking(expectedLeakCount: expectedLeakCount, file: file,
+                       line: line, testFunction)
+    }
+  }
 }
 
 struct ExampleLeakModel : Differentiable {
@@ -53,14 +67,14 @@ struct Pair<T : Differentiable, U : Differentiable> : Differentiable
   }
 }
 
-LeakCheckingTests.test("BasicLetLeakChecking") {
-  testWithLeakChecking {
+LeakCheckingTests.testWithLeakChecking("BasicLetLeakChecking") {
+  do {
     let model = ExampleLeakModel()
     let x: Tracked<Float> = 1.0
     _ = model.gradient(at: x) { m, x in m.applied(to: x) }
   }
 
-  testWithLeakChecking {
+  do {
     let model = ExampleLeakModel()
     let x: Tracked<Float> = 1.0
     _ = model.gradient(at: x) { m, x in
@@ -70,14 +84,12 @@ LeakCheckingTests.test("BasicLetLeakChecking") {
   }
 }
 
-LeakCheckingTests.test("BasicVarLeakChecking") {
-  testWithLeakChecking {
-    var model = ExampleLeakModel()
-    var x: Tracked<Float> = 1.0
-    _ = gradient(at: model, x) { m, x -> Float in
-      var y = x + Tracked<Float>(x.value)
-      return m.applied(to: y).value
-    }
+LeakCheckingTests.testWithLeakChecking("BasicVarLeakChecking") {
+  var model = ExampleLeakModel()
+  var x: Tracked<Float> = 1.0
+  _ = gradient(at: model, x) { m, x -> Float in
+    var y = x + Tracked<Float>(x.value)
+    return m.applied(to: y).value
   }
 }
 
@@ -97,7 +109,7 @@ extension DummyLayer {
     return Swift.valueWithPullback(at: self, input) { (m, i) in m.requirement(i) }
   }
 }
-LeakCheckingTests.test("TestProtocolDefaultDerivative") {
+LeakCheckingTests.testWithLeakChecking("TestProtocolDefaultDerivative") {
   struct Foo : DummyLayer {
     // NOTE: Make sure not to override `defaultImpl`.
     // To reproduce the bug, the VJP of `Foo.requirement` should dispatch to
@@ -109,60 +121,52 @@ LeakCheckingTests.test("TestProtocolDefaultDerivative") {
     }
   }
 
-  testWithLeakChecking {
-    let x = Tracked<Float>(1)
-    let model = Foo()
-    _ = model.valueWithGradient { model in
-      // Call the protocol default implementation method.
-      model.defaultImpl(x)
-    }
+  let x = Tracked<Float>(1)
+  let model = Foo()
+  _ = model.valueWithGradient { model in
+    // Call the protocol default implementation method.
+    model.defaultImpl(x)
   }
 }
 
-LeakCheckingTests.test("LetStructs") {
-  testWithLeakChecking {
-    func structConstructionWithOwnedParams(_ x: Tracked<Float>) -> Tracked<Float> {
-      let z = Tracked(x)
-      return z.value
-    }
-    _ = Tracked<Float>(4).valueWithGradient(in: structConstructionWithOwnedParams)
+LeakCheckingTests.testWithLeakChecking("LetStructs") {
+  func structConstructionWithOwnedParams(_ x: Tracked<Float>) -> Tracked<Float> {
+    let z = Tracked(x)
+    return z.value
   }
+  _ = Tracked<Float>(4).valueWithGradient(in: structConstructionWithOwnedParams)
 }
 
-LeakCheckingTests.test("NestedVarStructs") {
-  testWithLeakChecking {
-    func nestedstruct_var(_ x: Tracked<Float>) -> Tracked<Float> {
-      var y = FloatPair(x + x, x - x)
-      var z = Pair(Tracked(y), x)
-      var w = FloatPair(x, x)
-      y.first = w.second
-      y.second = w.first
-      z.first = Tracked(FloatPair(z.first.value.first - y.first,
-                                  z.first.value.second + y.first))
-      return y.first + y.second - z.first.value.first + z.first.value.second
-    }
-    expectEqual((8, 2), Tracked<Float>(4).valueWithGradient(in: nestedstruct_var))
+LeakCheckingTests.testWithLeakChecking("NestedVarStructs") {
+  func nestedstruct_var(_ x: Tracked<Float>) -> Tracked<Float> {
+    var y = FloatPair(x + x, x - x)
+    var z = Pair(Tracked(y), x)
+    var w = FloatPair(x, x)
+    y.first = w.second
+    y.second = w.first
+    z.first = Tracked(FloatPair(z.first.value.first - y.first,
+                                z.first.value.second + y.first))
+    return y.first + y.second - z.first.value.first + z.first.value.second
   }
+  expectEqual((8, 2), Tracked<Float>(4).valueWithGradient(in: nestedstruct_var))
 }
 
-LeakCheckingTests.test("NestedVarTuples") {
-  testWithLeakChecking {
-    func nestedtuple_var(_ x: Tracked<Float>) -> Tracked<Float> {
-      var y = (x + x, x - x)
-      var z = (y, x)
-      var w = (x, x)
-      y.0 = w.1
-      y.1 = w.0
-      z.0.0 = z.0.0 - y.0
-      z.0.1 = z.0.1 + y.0
-      return y.0 + y.1 - z.0.0 + z.0.1
-    }
-    expectEqual((8, 2), Tracked<Float>(4).valueWithGradient(in: nestedtuple_var))
+LeakCheckingTests.testWithLeakChecking("NestedVarTuples") {
+  func nestedtuple_var(_ x: Tracked<Float>) -> Tracked<Float> {
+    var y = (x + x, x - x)
+    var z = (y, x)
+    var w = (x, x)
+    y.0 = w.1
+    y.1 = w.0
+    z.0.0 = z.0.0 - y.0
+    z.0.1 = z.0.1 + y.0
+    return y.0 + y.1 - z.0.0 + z.0.1
   }
+  expectEqual((8, 2), Tracked<Float>(4).valueWithGradient(in: nestedtuple_var))
 }
 
-LeakCheckingTests.test("ClosureCaptureLeakChecking") {
-  testWithLeakChecking {
+LeakCheckingTests.testWithLeakChecking("ClosureCaptureLeakChecking") {
+  do {
     var model = ExampleLeakModel()
     let x: Tracked<Float> = 1.0
 
@@ -172,7 +176,7 @@ LeakCheckingTests.test("ClosureCaptureLeakChecking") {
     }
   }
 
-  testWithLeakChecking {
+  do {
     var model = ExampleLeakModel()
     var x: Tracked<Float> = 1.0
     _ = model.gradient { m in
@@ -182,7 +186,7 @@ LeakCheckingTests.test("ClosureCaptureLeakChecking") {
     }
   }
 
-  testWithLeakChecking {
+  do {
     var model = ExampleLeakModel()
     let x: Tracked<Float> = 1.0
     _ = model.gradient { m in
@@ -193,29 +197,47 @@ LeakCheckingTests.test("ClosureCaptureLeakChecking") {
   }
 }
 
-LeakCheckingTests.test("ControlFlowWithIfElse") {
-  // FIXME: Fix control flow AD memory leaks.
-  testWithLeakChecking(expectedLeakCount: 2) {
-    var model = ExampleLeakModel()
-    let x: Tracked<Float> = 1.0
-    func control_flow_with_if_else(m: ExampleLeakModel, x: Tracked<Float>) -> Tracked<Float> {
-      let result: Tracked<Float>
-      if x > 0 {
-        result = m.applied(to: x)
-      } else {
-        result = x
-      }
-      return result
-    }
-    _ = model.gradient(at: x, in: control_flow_with_if_else)
+LeakCheckingTests.testWithLeakChecking("ControlFlowWithTrivialUnconditionalMath") {
+  func ControlFlowWithTrivialUnconditionalMath(_ x: Tracked<Float>) -> Tracked<Float> {
+    if true {}
+    return x
   }
+  var x: Tracked<Float> = 1.0
+  _ = x.valueWithGradient(in: ControlFlowWithTrivialUnconditionalMath)
+}
+
+LeakCheckingTests.testWithLeakChecking("ControlFlowWithTrivialNestedIfElse") {
+  func ControlFlowNestedWithTrivialIfElse(_ x: Tracked<Float>) -> Tracked<Float> {
+    if true {
+      if false {
+        return x
+      } else {
+        return x
+      }
+    }
+  }
+  var x: Tracked<Float> = 1.0
+  _ = x.valueWithGradient(in: ControlFlowNestedWithTrivialIfElse)
+}
+
+LeakCheckingTests.testWithLeakChecking("ControlFlowWithActiveCFCondition") {
+  var model = ExampleLeakModel()
+  let x: Tracked<Float> = 1.0
+  func ControlFlowWithActiveCFCondition(m: ExampleLeakModel, x: Tracked<Float>) -> Tracked<Float> {
+    if x > 0 {
+      return x
+    } else {
+      return x
+    }
+  }
+  _ = model.gradient(at: x, in: ControlFlowWithActiveCFCondition)
 }
 
 LeakCheckingTests.test("ControlFlowWithIf") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 2) {
+  withLeakChecking(expectedLeakCount: 2) {
     var model = ExampleLeakModel()
     let x: Tracked<Float> = 1.0
     _ = model.gradient(at: x) { m, x in
@@ -229,7 +251,7 @@ LeakCheckingTests.test("ControlFlowWithIf") {
 }
 
 LeakCheckingTests.test("ControlFlowWithIfInMethod") {
-  testWithLeakChecking(expectedLeakCount: 9) {
+  withLeakChecking(expectedLeakCount: 9) {
     struct Dense : Differentiable {
       var w1: Tracked<Float>
       @noDerivative var w2: Tracked<Float>?
@@ -253,7 +275,7 @@ LeakCheckingTests.test("ControlFlowWithLoop") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 10) {
+  withLeakChecking(expectedLeakCount: 10) {
     func for_loop(_ x: Tracked<Float>) -> Tracked<Float> {
       var result = x
       for _ in 1..<3 {
@@ -270,7 +292,7 @@ LeakCheckingTests.test("ControlFlowWithNestedLoop") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 36) {
+  withLeakChecking(expectedLeakCount: 36) {
     func nested_loop(_ x: Tracked<Float>) -> Tracked<Float> {
       var outer = x
       for _ in 1..<3 {
@@ -295,7 +317,7 @@ LeakCheckingTests.test("ControlFlowWithNestedTuples") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 29) {
+  withLeakChecking(expectedLeakCount: 29) {
     func cond_nestedtuple_var(_ x: Tracked<Float>) -> Tracked<Float> {
       // Convoluted function returning `x + x`.
       var y = (x + x, x - x)
@@ -321,7 +343,7 @@ LeakCheckingTests.test("ControlFlowWithNestedStructs") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 105) {
+  withLeakChecking(expectedLeakCount: 105) {
     func cond_nestedstruct_var(_ x: Tracked<Float>) -> Tracked<Float> {
       // Convoluted function returning `x + x`.
       var y = FloatPair(x + x, x - x)
@@ -347,7 +369,7 @@ LeakCheckingTests.test("ControlFlowWithSwitchEnumWithPayload") {
   // FIXME: Fix control flow AD memory leaks.
   // See related FIXME comments in adjoint value/buffer propagation in
   // lib/SILOptimizer/Mandatory/Differentiation.cpp.
-  testWithLeakChecking(expectedLeakCount: 47) {
+  withLeakChecking(expectedLeakCount: 47) {
     enum Enum {
       case a(Tracked<Float>)
       case b(Tracked<Float>, Tracked<Float>)
