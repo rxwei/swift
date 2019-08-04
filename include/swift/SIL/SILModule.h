@@ -28,6 +28,8 @@
 #include "swift/SIL/SILCoverageMap.h"
 #include "swift/SIL/SILDeclRef.h"
 #include "swift/SIL/SILDefaultWitnessTable.h"
+// SWIFT_ENABLE_TENSORFLOW
+#include "swift/SIL/SILDifferentiabilityWitness.h"
 #include "swift/SIL/SILFunction.h"
 #include "swift/SIL/SILGlobalVariable.h"
 #include "swift/SIL/SILPrintContext.h"
@@ -113,6 +115,9 @@ public:
   using PropertyListType = llvm::ilist<SILProperty>;
   using WitnessTableListType = llvm::ilist<SILWitnessTable>;
   using DefaultWitnessTableListType = llvm::ilist<SILDefaultWitnessTable>;
+  // SWIFT_ENABLE_TENSORFLOW
+  using DifferentiabilityWitnessListType =
+      llvm::ilist<SILDifferentiabilityWitness>;
   using CoverageMapCollectionType =
       llvm::MapVector<StringRef, SILCoverageMap *>;
 
@@ -137,6 +142,8 @@ private:
   friend SILType;
   friend SILVTable;
   friend SILProperty;
+  // SWIFT_ENABLE_TENSORFLOW
+  friend SILDifferentiabilityWitness;
   friend SILUndef;
   friend SILWitnessTable;
   friend Lowering::SILGenModule;
@@ -205,6 +212,10 @@ private:
   
   // The list of SILProperties in the module.
   PropertyListType properties;
+
+  // SWIFT_ENABLE_TENSORFLOW
+  // The list of SILDifferentiabilityWitnesses.
+  DifferentiabilityWitnessListType differentiabilityWitnesses;
 
   /// This is the underlying raw stream of OptRecordStream.
   ///
@@ -483,6 +494,15 @@ public:
 
   PropertyListType &getPropertyList() { return properties; }
   const PropertyListType &getPropertyList() const { return properties; }
+
+  // SWIFT_ENABLE_TENSORFLOW
+  DifferentiabilityWitnessListType &getDifferentiabilityWitnessList() {
+    return differentiabilityWitnesses;
+  }
+  const DifferentiabilityWitnessListType &
+  getDifferentiabilityWitnessList() const {
+    return differentiabilityWitnesses;
+  }
   
   /// Look for a global variable by name.
   ///

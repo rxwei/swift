@@ -675,6 +675,26 @@ SILProperty *SILProperty::create(SILModule &M,
   return prop;
 }
 
+// SWIFT_ENABLE_TENSORFLOW
+SILDifferentiabilityWitness *SILDifferentiabilityWitness::create(
+    SILModule &M, bool Serialized, bool IsDeclaration,
+    unsigned DifferentiationOrder, SILFunction *OriginalFunction,
+    SILFunction *JVPFunction, SILFunction *VJPFunction,
+    AutoDiffIndexSubset *ParameterIndices, AutoDiffIndexSubset *ResultIndices,
+    ArrayRef<Requirement> GenericRequirements) {
+  unsigned numRequirements = GenericRequirements.size();
+  unsigned size = sizeof(SILDifferentiabilityWitness) +
+      numRequirements * sizeof(Requirement);
+  void *buf = M.allocate(size, alignof(SILDifferentiabilityWitness));
+  auto *diffWit = new (buf)
+      SILDifferentiabilityWitness(Serialized, IsDeclaration,
+                                  DifferentiationOrder, OriginalFunction,
+                                  JVPFunction, VJPFunction, ParameterIndices,
+                                  ResultIndices, GenericRequirements);
+  M.differentiabilityWitnesses.push_back(diffWit);
+  return diffWit;
+}
+
 // Definition from SILLinkage.h.
 SILLinkage swift::getDeclSILLinkage(const ValueDecl *decl) {
   AccessLevel access = decl->getEffectiveAccess();

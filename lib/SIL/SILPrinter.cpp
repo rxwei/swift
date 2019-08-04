@@ -2739,6 +2739,38 @@ static void printSILProperties(SILPrintContext &Ctx,
   }
 }
 
+void SILDifferentiabilityWitness::print(SILPrintContext &Ctx) const {
+  PrintOptions Options = PrintOptions::printSIL();
+
+  auto &OS = Ctx.OS();
+  OS << "sil_differentiability_witness ";
+  if (Serialized)
+    OS << "[serialized] ";
+  OS << "[parameters ";
+  for (auto index : ParameterIndices->getIndices())
+    OS << index << ' ';
+  OS << " out of " << ParameterIndices->getCapacity() << "] ";
+  OS << "[results ";
+  for (auto index : ResultIndices->getIndices())
+    OS << index << ' ';
+  OS << " out of " << ResultIndices->getCapacity() << "] ";
+  OS << OriginalFunction->getName();
+  if (!IsDeclaration) {
+    OS << " {\n";
+    OS << "  jvp @" << JVPFunction->getName() << " : "
+       << JVPFunction->getLoweredType() << '\n';
+    OS << "  vjp @" << VJPFunction->getName() << " : "
+       << VJPFunction->getLoweredType() << '\n';
+    OS << "}";
+  }
+  OS << '\n';
+}
+
+void SILDifferentiabilityWitness::dump() const {
+  SILPrintContext context(llvm::errs());
+  print(context);
+}
+
 /// Pretty-print the SILModule to the designated stream.
 void SILModule::print(SILPrintContext &PrintCtx, ModuleDecl *M,
                       bool PrintASTDecls) const {
