@@ -207,6 +207,7 @@ void State::initializeConsumingUse(BranchPropagatedUser consumingUser,
                  << "Found over consume?!\n"
                  << "Value: " << *value << "User: " << *consumingUser
                  << "Block: bb" << userBlock->getDebugID() << "\n\n";
+    value->getFunction()->print(llvm::errs());
   });
 }
 
@@ -291,6 +292,7 @@ void State::checkPredsForDoubleConsume(BranchPropagatedUser consumingUser,
                  << "Found over consume?!\n"
                  << "Value: " << *value << "User: " << *consumingUser
                  << "Block: bb" << userBlock->getDebugID() << "\n\n";
+    value->getFunction()->print(llvm::errs());
   });
 }
 
@@ -314,6 +316,7 @@ void State::checkPredsForDoubleConsume(SILBasicBlock *userBlock) {
                  << "Found over consume?!\n"
                  << "Value: " << *value << "Block: bb"
                  << userBlock->getDebugID() << "\n\n";
+    value->getFunction()->print(llvm::errs());
   });
 }
 
