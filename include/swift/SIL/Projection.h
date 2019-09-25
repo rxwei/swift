@@ -140,6 +140,10 @@ struct ProjectionIndex {
   SILValue Aggregate;
   unsigned Index;
 
+  // SWIFT_ENABLE_TENSORFLOW
+  explicit ProjectionIndex(SILValue Aggr, unsigned Index)
+      : Aggregate(Aggr), Index(Index) {}
+
   explicit ProjectionIndex(SILValue V) : Index(~0U) {
     switch (V->getKind()) {
     default:
@@ -196,6 +200,11 @@ struct ProjectionIndex {
     }
   }
   bool isValid() const { return (bool)Aggregate; }
+  operator bool() const { return isValid(); }
+  // SWIFT_ENABLE_TENSORFLOW
+  bool operator==(const ProjectionIndex &Other) const {
+    return Aggregate == Other.Aggregate && Index == Other.Index;
+  }
 };
 
 /// An abstract representation of the index of a subtype of an aggregate
@@ -1009,6 +1018,28 @@ private:
 } // end swift namespace
 
 namespace llvm {
+// SWIFT_ENABLE_TENSORFLOW
+using swift::ProjectionIndex;
+/// Allow ProjectionIndex to be used in DenseMap.
+template <> struct DenseMapInfo<ProjectionIndex> {
+  static inline ProjectionIndex getEmptyKey() {
+    return ProjectionIndex(DenseMapInfo<swift::SILValue>::getEmptyKey(),
+                           DenseMapInfo<unsigned>::getEmptyKey());
+  }
+  static inline ProjectionIndex getTombstoneKey() {
+    return ProjectionIndex(DenseMapInfo<swift::SILValue>::getTombstoneKey(),
+                           DenseMapInfo<unsigned>::getTombstoneKey());
+  }
+  static inline unsigned getHashValue(const ProjectionIndex &Val) {
+    return hash_combine(
+        DenseMapInfo<swift::SILValue>::getHashValue(Val.Aggregate),
+        DenseMapInfo<unsigned>::getHashValue(Val.Index));
+  }
+  static bool isEqual(const ProjectionIndex &LHS, const ProjectionIndex &RHS) {
+    return LHS == RHS;
+  }
+};
+
 using swift::ProjectionPath;
 /// Allow ProjectionPath to be used in DenseMap.
 template <> struct DenseMapInfo<ProjectionPath> {

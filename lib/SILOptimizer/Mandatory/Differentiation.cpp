@@ -3937,91 +3937,87 @@ public:
 
 namespace {
 class PullbackEmitter;
-class AdjointValue;
+class AdjointBuffer;
 
-enum AdjointValueKind {
+enum AdjointBufferKind {
   /// An empty adjoint, i.e. zero. This case exists due to its special
   /// mathematical properties: `0 + x = x`. This is a guaranteed optimization
   /// when we combine a zero adjoint with another (e.g. differentiating a
   /// fanout).
   Zero,
 
-  /// An aggregate of adjoint values.
+  /// An aggregate of adjoint buffers.
   Aggregate,
 
-  /// A concrete SIL value.
+  /// A concrete SIL buffer.
   Concrete,
 };
 
-class AdjointValueBase {
-  friend class AdjointValue;
+class AdjointBufferBase {
+  friend class AdjointBuffer;
 
   /// The kind of this adjoint value.
-  AdjointValueKind kind;
+  AdjointBufferKind kind;
 
   /// The type of this value as if it were materialized as a SIL value.
   SILType type;
 
   /// The underlying value.
   union Value {
-    ArrayRef<AdjointValue> aggregate;
+    ArrayRef<AdjointBuffer> aggregate;
     SILValue concrete;
-    Value(ArrayRef<AdjointValue> v) : aggregate(v) {}
+    Value(ArrayRef<AdjointBuffer> v) : aggregate(v) {}
     Value(SILValue v) : concrete(v) {}
     Value() {}
   } value;
 
-  explicit AdjointValueBase(SILType type, ArrayRef<AdjointValue> aggregate)
-      : kind(AdjointValueKind::Aggregate), type(type), value(aggregate) {}
+  explicit AdjointBufferBase(SILType type, ArrayRef<AdjointBuffer> aggregate)
+      : kind(AdjointBufferKind::Aggregate), type(type), value(aggregate) {}
 
-  explicit AdjointValueBase(SILValue v)
-      : kind(AdjointValueKind::Concrete), type(v->getType()), value(v) {}
+  explicit AdjointBufferBase(SILValue v)
+      : kind(AdjointBufferKind::Concrete), type(v->getType()), value(v) {}
 
-  explicit AdjointValueBase(SILType type)
-      : kind(AdjointValueKind::Zero), type(type) {}
+  explicit AdjointBufferBase(SILType type)
+      : kind(AdjointBufferKind::Zero), type(type) {}
 };
 
-/// A symbolic adjoint value that is capable of representing zero value 0 and
-/// in addition to a materialized SILValue. This is expected to be passed
-/// around by value in most cases, as it's two words long.
-// NOTE(TF-625): `AdjointValue` is deprecated; differentials/pullbacks have
-// been canonicalized to be maximally indirect, so only tangent/adjoint buffers
-// are used.
-class AdjointValue final {
+class AdjointBuffer final {
   friend class PullbackEmitter;
 
 private:
   /// The kind of this adjoint value.
-  AdjointValueBase *base;
-  /*implicit*/ AdjointValue(AdjointValueBase *base = nullptr) : base(base) {}
+  AdjointBufferBase *base;
+  /*implicit*/ AdjointBuffer(AdjointBufferBase *base = nullptr) : base(base) {}
 
 public:
-  AdjointValueBase *operator->() const { return base; }
-  AdjointValueBase &operator*() const { return *base; }
+  AdjointBufferBase *operator->() const { return base; }
+  AdjointBufferBase &operator*() const { return *base; }
 
-  static AdjointValue createConcrete(llvm::BumpPtrAllocator &allocator,
-                                     SILValue value) {
-    return new (allocator.Allocate<AdjointValueBase>()) AdjointValueBase(value);
+  static AdjointBuffer createConcrete(llvm::BumpPtrAllocator &allocator,
+                                      SILValue buffer) {
+    return
+        new (allocator.Allocate<AdjointBufferBase>()) AdjointBufferBase(buffer);
   }
 
   template<typename EltRange>
-  static AdjointValue createAggregate(llvm::BumpPtrAllocator &allocator,
+  static AdjointBuffer createAggregate(llvm::BumpPtrAllocator &allocator,
                                       SILType type, EltRange elements) {
-    AdjointValue *buf = reinterpret_cast<AdjointValue *>(allocator.Allocate(
-        elements.size() * sizeof(AdjointValue), alignof(AdjointValue)));
-    MutableArrayRef<AdjointValue> elementsCopy(buf, elements.size());
+    AdjointBuffer *buf = reinterpret_cast<AdjointBuffer *>(allocator.Allocate(
+        elements.size() * sizeof(AdjointBuffer), alignof(AdjointBuffer)));
+    MutableArrayRef<AdjointBuffer> elementsCopy(buf, elements.size());
     std::uninitialized_copy(elements.begin(), elements.end(),
                             elementsCopy.begin());
-    return new (allocator.Allocate<AdjointValueBase>())
-        AdjointValueBase(type, elementsCopy);
+    return new (allocator.Allocate<AdjointBufferBase>())
+        AdjointBufferBase(type, elementsCopy);
   }
 
-  static AdjointValue createZero(llvm::BumpPtrAllocator &allocator,
+  static AdjointBuffer createZero(llvm::BumpPtrAllocator &allocator,
                                  SILType type) {
-    return new (allocator.Allocate<AdjointValueBase>()) AdjointValueBase(type);
+    return
+        new (allocator.Allocate<AdjointBufferBase>()) AdjointBufferBase(type);
   }
 
-  AdjointValueKind getKind() const { return base->kind; }
+  AdjointBufferKind getKind() const { return base->kind; }
   SILType getType() const { return base->type; }
   CanType getSwiftType() const { return getType().getASTType(); }
 
@@ -4029,21 +4025,21 @@ public:
     return getSwiftType()->getAnyNominal();
   }
 
-  bool isZero() const { return getKind() == AdjointValueKind::Zero; }
-  bool isAggregate() const { return getKind() == AdjointValueKind::Aggregate; }
-  bool isConcrete() const { return getKind() == AdjointValueKind::Concrete; }
+  bool isZero() const { return getKind() == AdjointBufferKind::Zero; }
+  bool isAggregate() const { return getKind() == AdjointBufferKind::Aggregate; }
+  bool isConcrete() const { return getKind() == AdjointBufferKind::Concrete; }
 
   unsigned getNumAggregateElements() const {
     assert(isAggregate());
     return base->value.aggregate.size();
   }
 
-  AdjointValue getAggregateElement(unsigned i) const {
+  AdjointBuffer getAggregateElement(unsigned i) const {
     assert(isAggregate());
     return base->value.aggregate[i];
   }
 
-  ArrayRef<AdjointValue> getAggregateElements() const {
+  ArrayRef<AdjointBuffer> getAggregateElements() const {
     return base->value.aggregate;
   }
 
@@ -4054,10 +4050,10 @@ public:
 
   void print(llvm::raw_ostream &s) const {
     switch (getKind()) {
-    case AdjointValueKind::Zero:
+    case AdjointBufferKind::Zero:
       s << "Zero";
       break;
-    case AdjointValueKind::Aggregate:
+    case AdjointBufferKind::Aggregate:
       s << "Aggregate<";
       if (auto *decl =
             getType().getASTType()->getStructOrBoundGenericStruct()) {
@@ -4065,28 +4061,117 @@ public:
         interleave(llvm::zip(decl->getStoredProperties(),
                              base->value.aggregate),
                              [&s](std::tuple<VarDecl *,
-                                             const AdjointValue &> elt) {
+                                             const AdjointBuffer &> elt) {
                                s << std::get<0>(elt)->getName() << ": ";
                                std::get<1>(elt).print(s);
                              }, [&s] { s << ", "; });
       } else if (auto tupleType = getType().getAs<TupleType>()) {
         s << "Tuple>(";
         interleave(base->value.aggregate,
-                   [&s](const AdjointValue &elt) { elt.print(s); },
+                   [&s](const AdjointBuffer &elt) { elt.print(s); },
                    [&s] { s << ", "; });
       } else {
         llvm_unreachable("Invalid aggregate");
       }
       s << ')';
       break;
-    case AdjointValueKind::Concrete:
+    case AdjointBufferKind::Concrete:
       s << "Concrete(" << base->value.concrete << ')';
       break;
     }
   }
 };
 
+struct OriginalValue {
+  enum class Kind : uint8_t { Root, BufferAccess, Projection };
+  union Value {
+    SILValue value;
+    ProjectionIndex projection;
+    Value(SILValue value) : value(value) {}
+    Value(ProjectionIndex projection) : projection(projection) {}
+  };
+
+  Kind kind;
+  Value value;
+
+  explicit OriginalValue(Kind kind, Value value) : kind(kind), value(value) {}
+
+  OriginalValue(SILValue buffer) : kind(Kind::Root), value(buffer) {
+    if (auto *bai = dyn_cast<BeginAccessInst>(buffer)) {
+      kind = Kind::BufferAccess;
+      value = bai->getSource();
+    } else if (auto proj = ProjectionIndex(buffer)) {
+      kind = Kind::Projection;
+      value = proj;
+    }
+  }
+
+  SILValue getRoot() const {
+    assert(kind == Kind::Root);
+    return value.value;
+  }
+
+  SILValue getBufferAccess() const {
+    assert(kind == Kind::BufferAccess);
+    return value.value;
+  }
+
+  ProjectionIndex getProjection() const {
+    assert(kind == Kind::Projection);
+    return value.projection;
+  }
+
+  bool operator==(const OriginalValue &other) const {
+    switch (kind) {
+    case Kind::Root:
+      return getRoot() == other.getRoot();
+    case Kind::BufferAccess:
+      return getBufferAccess() == other.getBufferAccess();
+    case Kind::Projection:
+      return getProjection() == other.getProjection();
+    }
+  }
+};
 } // end anonymous namespace
+
+namespace llvm {
+using ::OriginalValue;
+template<typename T> struct DenseMapInfo;
+template<> struct DenseMapInfo<OriginalValue> {
+  static OriginalValue getEmptyKey() {
+    return OriginalValue(OriginalValue::Kind::Root,
+                           DenseMapInfo<SILValue>::getEmptyKey());
+  }
+  static OriginalValue getTombstoneKey() {
+    return OriginalValue(OriginalValue::Kind::Root,
+                           DenseMapInfo<SILValue>::getTombstoneKey());
+  }
+  static unsigned getHashValue(const OriginalValue &Val) {
+    auto hashValue = DenseMapInfo<unsigned>::getHashValue((unsigned)Val.kind);
+    switch (Val.kind) {
+    case OriginalValue::Kind::Root:
+      hashValue = hash_combine(
+          hashValue, DenseMapInfo<SILValue>::getHashValue(Val.getRoot()));
+      break;
+    case OriginalValue::Kind::BufferAccess:
+      hashValue = hash_combine(
+          hashValue,
+          DenseMapInfo<SILValue>::getHashValue(Val.getBufferAccess()));
+      break;
+    case OriginalValue::Kind::Projection:
+      hashValue = hash_combine(
+          hashValue,
+          DenseMapInfo<ProjectionIndex>::getHashValue(Val.getProjection()));
+      break;
+    }
+    return hashValue;
+  }
+  static bool isEqual(const OriginalValue &LHS,
+                      const OriginalValue &RHS) {
+    return LHS == RHS;
+  }
+};
+} // end namespace llvm
 
 namespace {
 
@@ -4284,13 +4369,13 @@ private:
   // Tangent value factory methods
   //--------------------------------------------------------------------------//
 
-  AdjointValue makeZeroTangentValue(SILType type) {
-    return AdjointValue::createZero(
+  AdjointBuffer makeZeroTangentValue(SILType type) {
+    return AdjointBuffer::createZero(
         allocator, remapSILTypeInDifferential(type));
   }
 
-  AdjointValue makeConcreteTangentValue(SILValue value) {
-    return AdjointValue::createConcrete(allocator, value);
+  AdjointBuffer makeConcreteTangentValue(SILValue value) {
+    return AdjointBuffer::createConcrete(allocator, value);
   }
 
   //--------------------------------------------------------------------------//
@@ -5658,9 +5743,9 @@ private:
   /// Pullback basic blocks always have the predecessor as the single argument.
   DenseMap<SILBasicBlock *, SILBasicBlock *> pullbackBBMap;
 
-  /// Mapping from original basic blocks and original buffers to corresponding
+  /// Mapping from original basic blocks and original values to corresponding
   /// adjoint buffers.
-  DenseMap<std::pair<SILBasicBlock *, SILValue>, SILValue> bufferMap;
+  DenseMap<std::pair<SILBasicBlock *, OriginalValue>, AdjointBuffer> bufferMap;
 
   /// Mapping from pullback basic blocks to pullback struct arguments.
   DenseMap<SILBasicBlock *, SILArgument *> pullbackStructArguments;
@@ -5772,12 +5857,12 @@ private:
   // Adjoint value factory methods
   //--------------------------------------------------------------------------//
 
-  AdjointValue makeZeroAdjointValue(SILType type);
+  AdjointBuffer makeZeroAdjointValue(SILType type);
 
-  AdjointValue makeConcreteAdjointValue(SILValue value);
+  AdjointBuffer makeConcreteAdjointValue(SILValue value);
 
   template<typename EltRange>
-  AdjointValue makeAggregateAdjointValue(SILType type, EltRange elements);
+  AdjointBuffer makeAggregateAdjointValue(SILType type, EltRange elements);
 
   //--------------------------------------------------------------------------//
   // Temporary value management
@@ -5855,52 +5940,52 @@ private:
   //--------------------------------------------------------------------------//
 
   void setAdjointBuffer(SILBasicBlock *origBB, SILValue valueInOriginal,
-                        SILValue adjointBuffer) {
+                        AdjointBuffer adjointBuffer) {
     auto insertion =
         bufferMap.try_emplace({origBB, valueInOriginal}, adjointBuffer);
     assert(insertion.second); (void)insertion;
   }
 
-  SILValue getAdjointProjection(SILBasicBlock *origBB,
-                                SILValue originalProjection) {
-    // Handle `struct_element_addr`.
-    if (auto *seai = dyn_cast<StructElementAddrInst>(originalProjection)) {
-      auto adjSource = getAdjointBuffer(origBB, seai->getOperand());
-      auto *tangentVectorDecl =
-          adjSource->getType().getStructOrBoundGenericStruct();
-      auto tanFieldLookup =
-          tangentVectorDecl->lookupDirect(seai->getField()->getName());
-      assert(tanFieldLookup.size() == 1);
-      auto *tanField = cast<VarDecl>(tanFieldLookup.front());
-      return builder.createStructElementAddr(
-          seai->getLoc(), adjSource, tanField);
-    }
-    // Handle `tuple_element_addr`.
-    if (auto *teai = dyn_cast<TupleElementAddrInst>(originalProjection)) {
-      auto source = teai->getOperand();
-      auto adjSource = getAdjointBuffer(origBB, source);
-      if (!adjSource->getType().is<TupleType>())
-        return adjSource;
-      auto origTupleTy = source->getType().castTo<TupleType>();
-      unsigned adjIndex = 0;
-      for (unsigned i : range(teai->getFieldNo())) {
-        if (getTangentSpace(
-                origTupleTy->getElement(i).getType()->getCanonicalType()))
-          ++adjIndex;
-      }
-      return builder.createTupleElementAddr(
-          teai->getLoc(), adjSource, adjIndex);
-    }
-    // Handle `begin_access`.
-    if (auto *bai = dyn_cast<BeginAccessInst>(originalProjection)) {
-      auto adjBase = getAdjointBuffer(origBB, bai->getOperand());
-      if (errorOccurred)
-        return (bufferMap[{origBB, originalProjection}] = SILValue());
-      // Return the base buffer's adjoint buffer.
-      return adjBase;
-    }
-    return SILValue();
-  }
+//  SILValue getAdjointProjection(SILBasicBlock *origBB,
+//                                SILValue originalProjection) {
+//    // Handle `struct_element_addr`.
+//    if (auto *seai = dyn_cast<StructElementAddrInst>(originalProjection)) {
+//      auto adjSource = getAdjointBuffer(origBB, seai->getOperand());
+//      auto *tangentVectorDecl =
+//          adjSource->getType().getStructOrBoundGenericStruct();
+//      auto tanFieldLookup =
+//          tangentVectorDecl->lookupDirect(seai->getField()->getName());
+//      assert(tanFieldLookup.size() == 1);
+//      auto *tanField = cast<VarDecl>(tanFieldLookup.front());
+//      return builder.createStructElementAddr(
+//          seai->getLoc(), adjSource, tanField);
+//    }
+//    // Handle `tuple_element_addr`.
+//    if (auto *teai = dyn_cast<TupleElementAddrInst>(originalProjection)) {
+//      auto source = teai->getOperand();
+//      auto adjSource = getAdjointBuffer(origBB, source);
+//      if (!adjSource->getType().is<TupleType>())
+//        return adjSource;
+//      auto origTupleTy = source->getType().castTo<TupleType>();
+//      unsigned adjIndex = 0;
+//      for (unsigned i : range(teai->getFieldNo())) {
+//        if (getTangentSpace(
+//                origTupleTy->getElement(i).getType()->getCanonicalType()))
+//          ++adjIndex;
+//      }
+//      return builder.createTupleElementAddr(
+//          teai->getLoc(), adjSource, adjIndex);
+//    }
+//    // Handle `begin_access`.
+//    if (auto *bai = dyn_cast<BeginAccessInst>(originalProjection)) {
+//      auto adjBase = getAdjointBuffer(origBB, bai->getOperand());
+//      if (errorOccurred)
+//        return (bufferMap[{origBB, originalProjection}] = SILValue());
+//      // Return the base buffer's adjoint buffer.
+//      return adjBase;
+//    }
+//    return SILValue();
+//  }
 
   SILBasicBlock::iterator getNextFunctionLocalAllocationInsertionPoint() {
     // If there are no local allocations, insert at the pullback entry start.
@@ -5913,7 +5998,8 @@ private:
     return lastLocalAlloc->getDefiningInstruction()->getIterator();
   }
 
-  SILValue &getAdjointBuffer(SILBasicBlock *origBB, SILValue valueInOriginal) {
+  AdjointBuffer &getAdjointBuffer(SILBasicBlock *origBB,
+                                  SILValue valueInOriginal) {
     assert(valueInOriginal->getFunction() == &getOriginal());
     auto insertion = bufferMap.try_emplace({origBB, valueInOriginal},
                                            SILValue());
@@ -6871,6 +6957,16 @@ public:
     accumulateIndirect(adjEltDest, adjElt, loc);
   }
 
+  /// Handle `tuple_element_addr` instruction.
+  ///   Original: y = tuple_element_addr x, <n>
+  ///    Adjoint: adj[x] += tuple (0, 0, ..., adj[y], ..., 0, 0)
+  ///                                         ^~~~~~
+  ///                            n'-th element, where n' is tuple tangent space
+  ///                            index corresponding to n
+  void visitTupleElementAttr(TupleElementAddrInst *teai) {
+#error "TODO"
+  }
+
   /// Handle `destructure_tuple` instruction.
   ///   Original: (y0, ..., yn) = destructure_tuple x
   ///    Adjoint: adj[x].0 += adj[y0]
@@ -6897,7 +6993,7 @@ public:
     }
   }
 
-  /// Handle `load` or `load_borrow` instruction
+  /// Handle `load` or `load_borrow` instruction.
   ///   Original: y = load/load_borrow x
   ///    Adjoint: adj[x] += adj[y]
   void visitLoadOperation(SingleValueInstruction *inst) {
@@ -7056,19 +7152,19 @@ public:
 };
 } // end anonymous namespace
 
-AdjointValue PullbackEmitter::makeZeroAdjointValue(SILType type) {
-  return AdjointValue::createZero(allocator, remapType(type));
+AdjointBuffer PullbackEmitter::makeZeroAdjointValue(SILType type) {
+  return AdjointBuffer::createZero(allocator, remapType(type));
 }
 
-AdjointValue
+AdjointBuffer
 PullbackEmitter::makeConcreteAdjointValue(SILValue value) {
-  return AdjointValue::createConcrete(allocator, value);
+  return AdjointBuffer::createConcrete(allocator, value);
 }
 
 template<typename EltRange>
-AdjointValue PullbackEmitter::makeAggregateAdjointValue(
+AdjointBuffer PullbackEmitter::makeAggregateAdjointValue(
     SILType type, EltRange elements) {
-  return AdjointValue::createAggregate(allocator, remapType(type), elements);
+  return AdjointBuffer::createAggregate(allocator, remapType(type), elements);
 }
 
 void PullbackEmitter::emitZeroIndirect(CanType type, SILValue bufferAccess,
