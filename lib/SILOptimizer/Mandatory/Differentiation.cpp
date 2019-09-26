@@ -5947,8 +5947,9 @@ private:
   // Buffer mapping
   //--------------------------------------------------------------------------//
 
-  void setAdjointBuffer(SILBasicBlock *origBB, OriginalValue originalValue,
+  void setAdjointBuffer(SILBasicBlock *origBB, SILValue valueInOriginal,
                         AdjointBuffer adjointBuffer) {
+    auto originalValue = getCanonicalOriginalValue(valueInOriginal);
     auto insertion =
         bufferMap.try_emplace({origBB, originalValue}, adjointBuffer);
     assert(insertion.second); (void)insertion;
@@ -6008,8 +6009,14 @@ private:
 
   Optional<AdjointBuffer> getAdjointBuffer(SILBasicBlock *origBB,
                                            SILValue valueInOriginal) {
-    auto origVal = getCanonicalOriginalValue(valueInOriginal);
     assert(valueInOriginal->getFunction() == &getOriginal());
+    return getAdjointBuffer(origBB, getCanonicalOriginalValue(valueInOriginal));
+  }
+
+  /// Returns the adjoint buffer corresponding to the given value in the
+  /// original function. Returns `None` if an error has occurred.
+  Optional<AdjointBuffer> getAdjointBuffer(SILBasicBlock *origBB,
+                                           OriginalValue origVal) {
     auto insertion = bufferMap.try_emplace({origBB, origVal}, SILValue());
     if (!insertion.second) // not inserted
       return insertion.first->getSecond();
@@ -6053,18 +6060,20 @@ private:
 //    builder.setInsertionPoint(insertionPoint);
     // Register the local buffer.
 //    functionLocalAllocations.push_back(newBuf);
-    return (insertion.first->getSecond() = makeZeroAdjointBuffer(bufObjectType));
+    return (
+        insertion.first->getSecond() = makeZeroAdjointBuffer(bufObjectType));
   }
 
   // Accumulates `rhsBufferAccess` into the adjoint buffer corresponding to
   // `valueInOriginal`.
   void addToAdjointBuffer(SILBasicBlock *origBB, SILValue valueInOriginal,
-                          SILValue rhsBuffer, SILLocation loc) {
-    assert(rhsBuffer->getFunction() == &getPullback());
-    auto adjointBuffer = getAdjointBuffer(origBB, valueInOriginal);
-    if (!adjointBuffer)
+                          AdjointBuffer newAdjointBuffer, SILLocation loc) {
+    auto existingAdjointBuffer = getAdjointBuffer(origBB, valueInOriginal);
+    if (!existingAdjointBuffer)
       return;
-    accumulateIndirect(adjointBuffer, rhsBuffer, loc);
+    setAdjointBuffer(
+        origBB, valueInOriginal,
+        accumulateAdjoints(*existingAdjointBuffer, newAdjointBuffer));
   }
 
   //--------------------------------------------------------------------------//
@@ -6281,7 +6290,8 @@ public:
     auto *seedBufCopy = builder.createAllocStack(pbLoc, seed->getType());
     builder.createCopyAddr(pbLoc, seed, seedBufCopy, IsNotTake,
                            IsInitialization);
-    setAdjointBuffer(origExit, origResult, seedBufCopy);
+    setAdjointBuffer(origExit, origResult,
+                     makeConcreteAdjointBuffer(seedBufCopy));
     functionLocalAllocations.push_back(seedBufCopy);
     LLVM_DEBUG(getADDebugStream()
                << "Assigned seed buffer " << *seedBufCopy
@@ -6385,7 +6395,8 @@ public:
   /// keep track of adjoint buffers of active values.
   SILBasicBlock *buildPullbackSuccessor(
       SILBasicBlock *origBB, SILBasicBlock *origPredBB,
-      SmallDenseMap<SILBasicBlock *, SmallMapVector<SILValue, SILValue, 4>>
+      SmallDenseMap<SILBasicBlock *,
+                    SmallMapVector<OriginalValue, AdjointBuffer, 4>>
           &activeValueAdjointBufferMap) {
     // Get the pullback block and optional pullback trampoline block of the
     // predecessor block.
@@ -6490,7 +6501,8 @@ public:
     // adjoint buffer. Used to propagate adjoint buffers from active values to
     // pullback successor blocks. `SmallMapVector` is used for deterministic
     // `copy_addr` generation order.
-    SmallDenseMap<SILBasicBlock *, SmallMapVector<SILValue, SILValue, 4>>
+    SmallDenseMap<SILBasicBlock *,
+                  SmallMapVector<OriginalValue, AdjointBuffer, 4>>
         activeValueAdjointBufferMap;
 
     // Propagate adjoint buffer from active basic block arguments to
@@ -6504,15 +6516,18 @@ public:
       // Initialize adjoint buffer of predecessor terminator operands as
       // adjoint buffer of current block arguments.
       auto bbArgAdj = getAdjointBuffer(bb, bbArg);
+      assert(bbArgAdj);
       for (auto pair : incomingValues) {
         auto *predBB = pair.first;
         auto incomingValue = pair.second;
         // Skip non-active incoming values.
         if (!getActivityInfo().isActive(incomingValue, getIndices()))
           continue;
-        bool incValHasAdjBuf = bufferMap.count({predBB, incomingValue});
+        bool incValHasAdjBuf = bufferMap.count(
+            {predBB, getCanonicalOriginalValue(incomingValue)});
         assert(incValHasAdjBuf);
-        activeValueAdjointBufferMap[predBB].insert({incomingValue, bbArgAdj});
+      activeValueAdjointBufferMap[predBB].insert(
+          {getCanonicalOriginalValue(incomingValue), *bbArgAdj});
       }
     }
 
@@ -6741,7 +6756,7 @@ public:
     // Get the seed (i.e. adjoint buffer of the original result).
     auto *bb = ai->getParent();
     auto seed = getAdjointBuffer(bb, origResult);
-    if (errorOccurred)
+    if (!seed)
       return;
 
     // Create allocations for pullback indirect results.
@@ -6768,7 +6783,7 @@ public:
           remapSubstitutionMap(thunk->getForwardingSubstitutionMap()),
           {pullback}, pullbackType->getCalleeConvention());
     }
-    args.push_back(seed);
+    args.push_back(*seed);
 
     // Call the callee pullback.
     auto *pullbackCall = builder.createApply(
