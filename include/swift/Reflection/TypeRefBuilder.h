@@ -80,35 +80,12 @@ using CaptureSection = ReflectionSection<CaptureDescriptorIterator>;
 using GenericSection = ReflectionSection<const void *>;
 
 struct ReflectionInfo {
-  struct {
-    FieldSection Metadata;
-    uint64_t SectionOffset;
-  } Field;
-
-  struct {
-    AssociatedTypeSection Metadata;
-    uint64_t SectionOffset;
-  } AssociatedType;
-
-  struct {
-    BuiltinTypeSection Metadata;
-    uint64_t SectionOffset;
-  } Builtin;
-
-  struct {
-    CaptureSection Metadata;
-    uint64_t SectionOffset;
-  } Capture;
-
-  struct {
-    GenericSection Metadata;
-    uint64_t SectionOffset;
-  } TypeReference;
-
-  struct {
-    GenericSection Metadata;
-    uint64_t SectionOffset;
-  } ReflectionString;
+  FieldSection Field;
+  AssociatedTypeSection AssociatedType;
+  BuiltinTypeSection Builtin;
+  CaptureSection Capture;
+  GenericSection TypeReference;
+  GenericSection ReflectionString;
 
   uint64_t LocalStartAddress;
   uint64_t RemoteStartAddress;
@@ -483,14 +460,27 @@ private:
   
   uint64_t getRemoteAddrOfTypeRefPointer(const void *pointer);
 
+  std::function<auto (SymbolicReferenceKind kind,
+                      Directness directness,
+                      int32_t offset, const void *base) -> Demangle::Node *>
+    SymbolicReferenceResolver;
+  
+  std::string normalizeReflectionName(StringRef name);
+  bool reflectionNameMatches(StringRef reflectionName,
+                             StringRef searchName);
+  
+  Demangle::Node *demangleTypeRef(StringRef mangledName) {
+    return Dem.demangleType(mangledName, SymbolicReferenceResolver);
+  }
+  
 public:
   template<typename Runtime>
-  void setSymbolicReferenceResolverReader(
+  void setMetadataReader(
                       remote::MetadataReader<Runtime, TypeRefBuilder> &reader) {
     // Have the TypeRefBuilder demangle symbolic references by reading their
     // demangling out of the referenced context descriptors in the target
     // process.
-    Dem.setSymbolicReferenceResolver(
+    SymbolicReferenceResolver =
     [this, &reader](SymbolicReferenceKind kind,
                     Directness directness,
                     int32_t offset, const void *base) -> Demangle::Node * {
@@ -518,8 +508,8 @@ public:
         // underlying type if available.
         if (context->getKind() == ContextDescriptorKind::OpaqueType) {
           return Dem.createNode(
-                              Node::Kind::OpaqueTypeDescriptorSymbolicReference,
-                              (uintptr_t)context.getAddress());
+                            Node::Kind::OpaqueTypeDescriptorSymbolicReference,
+                            context.getAddressData());
         }
           
         return reader.buildContextMangling(context, Dem);
@@ -531,7 +521,7 @@ public:
       }
       
       return nullptr;
-    });
+    };
     
     OpaqueUnderlyingTypeReader =
     [&reader](const void *descriptor, unsigned ordinal) -> const TypeRef* {
@@ -567,8 +557,7 @@ public:
   const CaptureDescriptor *getCaptureDescriptor(uint64_t RemoteAddress);
 
   /// Get the unsubstituted capture types for a closure context.
-  ClosureContextInfo getClosureContextInfo(const CaptureDescriptor &CD,
-                                           uint64_t Offset);
+  ClosureContextInfo getClosureContextInfo(const CaptureDescriptor &CD);
 
   ///
   /// Dumping typerefs, field declarations, associated types

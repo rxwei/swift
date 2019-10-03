@@ -343,8 +343,7 @@ static ValueDecl *deriveDifferentiable_method(
   funcDecl->setImplicit();
   funcDecl->setBodySynthesizer(bodySynthesizer.Fn, bodySynthesizer.Context);
 
-  if (auto *env = parentDC->getGenericEnvironmentOfContext())
-    funcDecl->setGenericEnvironment(env);
+  funcDecl->setGenericSignature(parentDC->getGenericSignatureOfContext());
   funcDecl->computeType();
   funcDecl->copyFormalAccessFrom(nominal, /*sourceIsParentContext*/ true);
   funcDecl->setValidationToChecked();
@@ -637,15 +636,15 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
               ->getAttrs()
               .hasAttribute<DifferentiableAttr>())
         continue;
-      ArrayRef<Requirement> requirements;
+      GenericSignature *derivativeGenSig = nullptr;
       // If the parent declaration context is an extension, the nominal type may
-      // conditionally conform to `Differentiable`. Use the conditional
-      // conformance requirements in getter `@differentiable` attributes.
+      // conditionally conform to `Differentiable`. Use the extension generic
+      // requirements in getter `@differentiable` attributes.
       if (auto *extDecl = dyn_cast<ExtensionDecl>(parentDC->getAsDecl()))
-        requirements = extDecl->getGenericRequirements();
+        derivativeGenSig = extDecl->getGenericSignature();
       auto *diffableAttr = DifferentiableAttr::create(
           C, /*implicit*/ true, SourceLoc(), SourceLoc(),
-          /*linear*/ false, {}, None, None, requirements);
+          /*linear*/ false, {}, None, None, derivativeGenSig);
       member->getAttrs().add(diffableAttr);
       // Compute getter parameter indices.
       auto *getterType = member->getAccessor(AccessorKind::Get)
@@ -704,11 +703,11 @@ static void addAssociatedTypeAliasDecl(Identifier name,
       TypeAliasDecl(SourceLoc(), SourceLoc(), name, SourceLoc(), {}, sourceDC);
   aliasDecl->setUnderlyingType(target->getDeclaredInterfaceType());
   aliasDecl->setImplicit();
-  if (auto env = sourceDC->getGenericEnvironmentOfContext())
-    aliasDecl->setGenericEnvironment(env);
+  aliasDecl->setGenericSignature(sourceDC->getGenericSignatureOfContext());
   cast<IterableDeclContext>(sourceDC->getAsDecl())->addMember(aliasDecl);
   aliasDecl->copyFormalAccessFrom(nominal, /*sourceIsParentContext*/ true);
   aliasDecl->setValidationToChecked();
+  aliasDecl->computeType();
   TC.validateDecl(aliasDecl);
   C.addSynthesizedDecl(aliasDecl);
 };
@@ -855,6 +854,7 @@ deriveDifferentiable_TangentVectorStruct(DerivedConformance &derived) {
     aliasDecl->setImplicit();
     aliasDecl->copyFormalAccessFrom(nominal, /*sourceIsParentContext*/ true);
     aliasDecl->setValidationToChecked();
+    aliasDecl->computeType();
     TC.validateDecl(aliasDecl);
     derived.addMembersToConformanceContext({aliasDecl});
     C.addSynthesizedDecl(aliasDecl);

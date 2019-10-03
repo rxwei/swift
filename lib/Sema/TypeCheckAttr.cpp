@@ -28,6 +28,7 @@
 #include "swift/AST/NameLookupRequests.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/PropertyWrappers.h"
+#include "swift/AST/SourceFile.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/AST/Types.h"
 #include "swift/Parse/Lexer.h"
@@ -1092,7 +1093,8 @@ bool swift::isValidDynamicCallableMethod(FuncDecl *decl, DeclContext *DC,
   //    `ExpressibleByStringLiteral`.
   //    `D.Value` and the return type can be arbitrary.
 
-  TC.validateDeclForNameLookup(decl);
+  // FIXME(InterfaceTypeRequest): Remove this.
+  (void)decl->getInterfaceType();
   auto paramList = decl->getParameters();
   if (paramList->size() != 1 || paramList->get(0)->isVariadic()) return false;
   auto argType = paramList->get(0)->getType();
@@ -1115,10 +1117,8 @@ bool swift::isValidDynamicCallableMethod(FuncDecl *decl, DeclContext *DC,
   auto dictConf = TypeChecker::conformsToProtocol(argType, dictLitProto, DC,
                                                   ConformanceCheckOptions());
   if (!dictConf) return false;
-  auto lookup = dictLitProto->lookupDirect(TC.Context.Id_Key);
-  auto keyAssocType =
-    cast<AssociatedTypeDecl>(lookup[0])->getDeclaredInterfaceType();
-  auto keyType = dictConf.getValue().getAssociatedType(argType, keyAssocType);
+  auto keyType = dictConf.getValue().getTypeWitnessByName(
+      argType, TC.Context.Id_Key);
   return TypeChecker::conformsToProtocol(keyType, stringLitProtocol, DC,
                                          ConformanceCheckOptions()).hasValue();
 }
@@ -1174,7 +1174,7 @@ static bool hasSingleNonVariadicParam(SubscriptDecl *decl,
     return false;
 
   auto *index = indices->get(0);
-  if (index->isVariadic() || !index->hasValidSignature())
+  if (index->isVariadic() || !index->hasInterfaceType())
     return false;
 
   if (ignoreLabel) {
@@ -1265,7 +1265,8 @@ visitDynamicMemberLookupAttr(DynamicMemberLookupAttr *attr) {
     auto oneCandidate = candidates.front().getValueDecl();
     candidates.filter([&](LookupResultEntry entry, bool isOuter) -> bool {
       auto cand = cast<SubscriptDecl>(entry.getValueDecl());
-      TC.validateDeclForNameLookup(cand);
+      // FIXME(InterfaceTypeRequest): Remove this.
+      (void)cand->getInterfaceType();
       return isValidDynamicMemberLookupSubscript(cand, decl, TC);
     });
 
@@ -1288,7 +1289,8 @@ visitDynamicMemberLookupAttr(DynamicMemberLookupAttr *attr) {
   // Validate the candidates while ignoring the label.
   newCandidates.filter([&](const LookupResultEntry entry, bool isOuter) {
     auto cand = cast<SubscriptDecl>(entry.getValueDecl());
-    TC.validateDeclForNameLookup(cand);
+    // FIXME(InterfaceTypeRequest): Remove this.
+    (void)cand->getInterfaceType();
     return isValidDynamicMemberLookupSubscript(cand, decl, TC,
                                                /*ignoreLabel*/ true);
   });
@@ -1630,7 +1632,8 @@ void AttributeChecker::checkApplicationMainAttribute(DeclAttribute *attr,
 
   // @XXApplicationMain classes must conform to the XXApplicationDelegate
   // protocol.
-  auto &C = D->getASTContext();
+  auto *SF = cast<SourceFile>(CD->getModuleScopeContext());
+  auto &C = SF->getASTContext();
 
   auto KitModule = C.getLoadedModule(Id_Kit);
   ProtocolDecl *ApplicationDelegateProto = nullptr;
@@ -1639,7 +1642,7 @@ void AttributeChecker::checkApplicationMainAttribute(DeclAttribute *attr,
     namelookup::lookupInModule(KitModule, Id_ApplicationDelegate,
                                decls, NLKind::QualifiedLookup,
                                namelookup::ResolutionKind::TypesOnly,
-                               KitModule);
+                               SF);
     if (decls.size() == 1)
       ApplicationDelegateProto = dyn_cast<ProtocolDecl>(decls[0]);
   }
@@ -1659,30 +1662,8 @@ void AttributeChecker::checkApplicationMainAttribute(DeclAttribute *attr,
 
   // Register the class as the main class in the module. If there are multiples
   // they will be diagnosed.
-  auto *SF = cast<SourceFile>(CD->getModuleScopeContext());
   if (SF->registerMainClass(CD, attr->getLocation()))
     attr->setInvalid();
-
-  // Check that we have the needed symbols in the frameworks.
-  auto lookupOptions = defaultUnqualifiedLookupOptions;
-  lookupOptions |= NameLookupFlags::KnownPrivate;
-  auto lookupMain = TC.lookupUnqualified(KitModule, Id_ApplicationMain,
-                                         SourceLoc(), lookupOptions);
-
-  for (const auto &result : lookupMain) {
-    TC.validateDecl(result.getValueDecl());
-  }
-  auto Foundation = TC.Context.getLoadedModule(C.Id_Foundation);
-  if (Foundation) {
-    auto lookupString = TC.lookupUnqualified(
-                          Foundation,
-                          C.getIdentifier("NSStringFromClass"),
-                          SourceLoc(),
-                          lookupOptions);
-    for (const auto &result : lookupString) {
-      TC.validateDecl(result.getValueDecl());
-    }
-  }
 }
 
 void AttributeChecker::visitNSApplicationMainAttr(NSApplicationMainAttr *attr) {
@@ -1897,8 +1878,7 @@ void AttributeChecker::visitSpecializeAttr(SpecializeAttr *attr) {
   SmallPtrSet<TypeBase *, 4> constrainedGenericParams;
 
   // Go over the set of requirements, adding them to the builder.
-  RequirementRequest::visitRequirements(
-      WhereClauseOwner(FD, attr), TypeResolutionStage::Interface,
+  WhereClauseOwner(FD, attr).visitRequirements(TypeResolutionStage::Interface,
       [&](const Requirement &req, RequirementRepr *reqRepr) {
         // Collect all of the generic parameters used by these types.
         switch (req.getKind()) {
@@ -2178,7 +2158,6 @@ static FuncDecl *findReplacedAccessor(DeclName replacedVarName,
   // Filter out any accessors that won't work.
   if (!results.empty()) {
     auto replacementStorage = replacement->getStorage();
-    TC.validateDecl(replacementStorage);
     Type replacementStorageType = getDynamicComparisonType(replacementStorage);
     results.erase(std::remove_if(results.begin(), results.end(),
         [&](ValueDecl *result) {
@@ -2190,7 +2169,6 @@ static FuncDecl *findReplacedAccessor(DeclName replacedVarName,
             return true;
 
           // Check for type mismatch.
-          TC.validateDecl(result);
           auto resultType = getDynamicComparisonType(result);
           if (!resultType->isEqual(replacementStorageType) &&
               !resultType->matches(
@@ -2224,7 +2202,9 @@ static FuncDecl *findReplacedAccessor(DeclName replacedVarName,
   }
 
   assert(!isa<FuncDecl>(results[0]));
-  TC.validateDecl(results[0]);
+  
+  // FIXME(InterfaceTypeRequest): Remove this.
+  (void)results[0]->getInterfaceType();
   auto *origStorage = cast<AbstractStorageDecl>(results[0]);
   if (!origStorage->isDynamic()) {
     TC.diagnose(attr->getLocation(),
@@ -2240,8 +2220,8 @@ static FuncDecl *findReplacedAccessor(DeclName replacedVarName,
   if (!origAccessor)
     return nullptr;
 
-  TC.validateDecl(origAccessor);
-
+  // FIXME(InterfaceTypeRequest): Remove this.
+  (void)origAccessor->getInterfaceType();
   if (origAccessor->isImplicit() &&
       !(origStorage->getReadImpl() == ReadImplKind::Stored &&
         origStorage->getWriteImpl() == WriteImplKind::Stored)) {
@@ -2273,9 +2253,7 @@ findReplacedFunction(DeclName replacedFunctionName,
     // Check for static/instance mismatch.
     if (result->isStatic() != replacement->isStatic())
       continue;
-
-    if (TC)
-      TC->validateDecl(result);
+    
     TypeMatchOptions matchMode = TypeMatchFlags::AllowABICompatible;
     matchMode |= TypeMatchFlags::AllowCompatibleOpaqueTypeArchetypes;
     if (result->getInterfaceType()->getCanonicalType()->matches(
@@ -2396,7 +2374,8 @@ void AttributeChecker::visitDynamicReplacementAttr(DynamicReplacementAttr *attr)
       if (attr->isInvalid())
         return;
 
-       TC.validateDecl(accessor);
+      // FIXME(InterfaceTypeRequest): Remove this.
+      (void)accessor->getInterfaceType();
        auto *orig = findReplacedAccessor(attr->getReplacedFunctionName(),
                                          accessor, attr, TC);
        if (!orig)
@@ -3383,8 +3362,8 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
         GenericSignatureBuilder::FloatingRequirementSource;
 
     bool errorOccurred = false;
-    RequirementRequest::visitRequirements(
-      WhereClauseOwner(original, attr), TypeResolutionStage::Structural,
+    WhereClauseOwner(original, attr).visitRequirements(
+      TypeResolutionStage::Structural,
       [&](const Requirement &req, RequirementRepr *reqRepr) {
         switch (req.getKind()) {
         case RequirementKind::SameType:
@@ -3417,9 +3396,9 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
     // functions.
     whereClauseGenSig = std::move(builder).computeGenericSignature(
         attr->getLocation(), /*allowConcreteGenericParams=*/true);
-    whereClauseGenEnv = whereClauseGenSig->createGenericEnvironment();
-    // Store the resolved requirements in the attribute.
-    attr->setRequirements(ctx, whereClauseGenSig->getRequirements());
+    whereClauseGenEnv = whereClauseGenSig->getGenericEnvironment();
+    // Store the resolved derivative generic signature in the attribute.
+    attr->setDerivativeGenericSignature(ctx, whereClauseGenSig);
   }
 
   // Validate the 'wrt:' parameters.
@@ -3492,7 +3471,7 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
             lookupConformance, whereClauseGenSig, /*makeSelfParamFirst*/ true);
 
     auto isValidJVP = [&](FuncDecl *jvpCandidate) {
-      TC.validateDeclForNameLookup(jvpCandidate);
+      TC.validateDecl(jvpCandidate);
       return checkFunctionSignature(
           cast<AnyFunctionType>(expectedJVPFnTy->getCanonicalType()),
           jvpCandidate->getInterfaceType()->getCanonicalType());
@@ -3518,7 +3497,7 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
             lookupConformance, whereClauseGenSig, /*makeSelfParamFirst*/ true);
 
     auto isValidVJP = [&](FuncDecl *vjpCandidate) {
-      TC.validateDeclForNameLookup(vjpCandidate);
+      TC.validateDecl(vjpCandidate);
       return checkFunctionSignature(
           cast<AnyFunctionType>(expectedVJPFnTy->getCanonicalType()),
           vjpCandidate->getInterfaceType()->getCanonicalType());
@@ -3544,7 +3523,7 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
     auto *newAttr = DifferentiableAttr::create(
         ctx, /*implicit*/ true, attr->AtLoc, attr->getRange(), attr->isLinear(),
         attr->getParameterIndices(), attr->getJVP(), attr->getVJP(),
-        attr->getRequirements());
+        attr->getDerivativeGenericSignature());
     newAttr->setJVPFunction(attr->getJVPFunction());
     newAttr->setVJPFunction(attr->getVJPFunction());
     auto insertion = ctx.DifferentiableAttrs.try_emplace(
@@ -3662,7 +3641,7 @@ void AttributeChecker::visitDifferentiatingAttr(DifferentiatingAttr *attr) {
   };
 
   auto isValidOriginal = [&](FuncDecl *originalCandidate) {
-    TC.validateDeclForNameLookup(originalCandidate);
+    TC.validateDecl(originalCandidate);
     return checkFunctionSignature(
         cast<AnyFunctionType>(originalFnType->getCanonicalType()),
         originalCandidate->getInterfaceType()->getCanonicalType(),
@@ -3829,16 +3808,6 @@ void AttributeChecker::visitDifferentiatingAttr(DifferentiatingAttr *attr) {
     return;
   }
 
-  // Compute derivative generic requirements that are not satisfied by original
-  // function.
-  SmallVector<Requirement, 8> derivativeRequirements;
-  if (auto derivativeGenSig = derivative->getGenericSignature()) {
-    auto originalGenSig = originalFn->getGenericSignature();
-    for (auto req : derivativeGenSig->getRequirements())
-      if (!originalGenSig->isRequirementSatisfied(req))
-        derivativeRequirements.push_back(req);
-  }
-
   // Try to find a `@differentiable` attribute on the original function with the
   // same differentiation parameters.
   DifferentiableAttr *da = nullptr;
@@ -3851,7 +3820,8 @@ void AttributeChecker::visitDifferentiatingAttr(DifferentiatingAttr *attr) {
     da = DifferentiableAttr::create(ctx, /*implicit*/ true, attr->AtLoc,
                                     attr->getRange(), attr->isLinear(),
                                     checkedWrtParamIndices, /*jvp*/ None,
-                                    /*vjp*/ None, derivativeRequirements);
+                                    /*vjp*/ None,
+                                    derivative->getGenericSignature());
     switch (kind) {
     case AutoDiffAssociatedFunctionKind::JVP:
       da->setJVPFunction(derivative);
@@ -4024,7 +3994,7 @@ void AttributeChecker::visitTransposingAttr(TransposingAttr *attr) {
     };
   
   auto isValidOriginal = [&](FuncDecl *originalCandidate) {
-    TC.validateDeclForNameLookup(originalCandidate);
+    TC.validateDecl(originalCandidate);
     return checkFunctionSignature(
         cast<AnyFunctionType>(expectedOriginalFnType->getCanonicalType()),
         originalCandidate->getInterfaceType()->getCanonicalType(),

@@ -1159,44 +1159,45 @@ public:
   }
 
   // SWIFT_ENABLE_TENSORFLOW
-  void visitAutoDiffFunctionInst(AutoDiffFunctionInst *adfi) {
-    if (!adfi->getParameterIndices()->isEmpty()) {
+  void visitDifferentiableFunctionInst(DifferentiableFunctionInst *dfi) {
+    if (!dfi->getParameterIndices()->isEmpty()) {
       *this << "[wrt";
-      for (auto i : adfi->getParameterIndices()->getIndices())
+      for (auto i : dfi->getParameterIndices()->getIndices())
         *this << ' ' << i;
       *this << "] ";
     }
-    *this << "[order " << adfi->getDifferentiationOrder() << "] ";
-    *this << getIDAndType(adfi->getOriginalFunction());
-    if (!adfi->getAssociatedFunctions().empty()) {
+    *this << "[order " << dfi->getDifferentiationOrder() << "] ";
+    *this << getIDAndType(dfi->getOriginalFunction());
+    if (!dfi->getAssociatedFunctions().empty()) {
       *this << " with ";
-      interleave(range(1, adfi->getDifferentiationOrder() + 1),
+      interleave(range(1, dfi->getDifferentiationOrder() + 1),
                  [&](unsigned order) {
-                   auto pair = adfi->getAssociatedFunctionPair(order);
+                   auto pair = dfi->getAssociatedFunctionPair(order);
                    *this << '{' << getIDAndType(pair.first) << ", "
                          << getIDAndType(pair.second) << '}';
                  }, [this] { *this << ", "; });
     }
   }
 
-  void visitAutoDiffFunctionExtractInst(AutoDiffFunctionExtractInst *adfei) {
+  void visitDifferentiableFunctionExtractInst(
+      DifferentiableFunctionExtractInst *dfei) {
     *this << '[';
-    switch (adfei->getExtractee()) {
-    case AutoDiffFunctionExtractee::Original:
+    switch (dfei->getExtractee()) {
+    case DifferentiableFunctionExtractee::Original:
       *this << "original";
       break;
-    case AutoDiffFunctionExtractee::JVP:
+    case DifferentiableFunctionExtractee::JVP:
       *this << "jvp";
       break;
-    case AutoDiffFunctionExtractee::VJP:
+    case DifferentiableFunctionExtractee::VJP:
       *this << "vjp";
       break;
     }
     *this << "] ";
-    auto order = adfei->getDifferentiationOrder();
+    auto order = dfei->getDifferentiationOrder();
     if (order > 0)
       *this << "[order " << order << "] ";
-    *this << getIDAndType(adfei->getFunctionOperand());
+    *this << getIDAndType(dfei->getFunctionOperand());
   }
 
   void visitFunctionRefInst(FunctionRefInst *FRI) {
@@ -2390,8 +2391,13 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
 
   if (isGlobalInit())
     OS << "[global_init] ";
-  if (isWeakLinked())
-    OS << "[_weakLinked] ";
+  if (isAlwaysWeakImported())
+    OS << "[weak_imported] ";
+  auto availability = getAvailabilityForLinkage();
+  if (!availability.isAlwaysAvailable()) {
+    auto version = availability.getOSVersion().getLowerEndpoint();
+    OS << "[available " << version.getAsString() << "] ";
+  }
 
   switch (getInlineStrategy()) {
     case NoInline: OS << "[noinline] "; break;
@@ -3051,6 +3057,12 @@ void SILCoverageMap::dump() const {
 }
 
 #ifndef NDEBUG
+// Disable the "for use only in debugger" warning.
+#if SWIFT_COMPILER_IS_MSVC
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+
 void SILDebugScope::dump(SourceManager &SM, llvm::raw_ostream &OS,
                          unsigned Indent) const {
   OS << "{\n";
@@ -3083,6 +3095,10 @@ void SILDebugScope::dump(SILModule &Mod) const {
   // We just use the default indent and llvm::errs().
   dump(Mod.getASTContext().SourceMgr);
 }
+
+#if SWIFT_COMPILER_IS_MSVC
+#pragma warning(pop)
+#endif
 
 #endif
 
@@ -3149,13 +3165,16 @@ void SILDifferentiableAttr::print(llvm::raw_ostream &OS) const {
   if (!VJPName.empty()) {
     OS << " vjp @" << VJPName;
   }
-  if (!getRequirements().empty()) {
+  if (!getDerivativeGenericSignature())
+    return;
+  auto requirements = getDerivativeGenericSignature()->getRequirements();
+  if (!requirements.empty()) {
     OS << " where ";
     SILFunction *original = getOriginal();
     assert(original);
     auto genericEnv = original->getGenericEnvironment();
     PrintOptions SubPrinter = PrintOptions::printSIL();
-    interleave(getRequirements(), [&](Requirement req) {
+    interleave(requirements, [&](Requirement req) {
       if (!genericEnv) {
          req.print(OS, SubPrinter);
          return;

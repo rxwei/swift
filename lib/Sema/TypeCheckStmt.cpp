@@ -30,6 +30,7 @@
 #include "swift/AST/NameLookup.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/PrettyStackTrace.h"
+#include "swift/AST/SourceFile.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/Basic/Range.h"
 #include "swift/Basic/STLExtras.h"
@@ -1902,8 +1903,6 @@ void TypeChecker::checkDefaultArguments(ParameterList *params,
 
     if (resultTy) {
       param->setDefaultValue(e);
-    } else {
-      param->setDefaultValue(nullptr);
     }
 
     checkInitializerErrorHandling(initContext, e);
@@ -1997,8 +1996,8 @@ static bool checkSuperInit(TypeChecker &tc, ConstructorDecl *fromCtor,
     lookupOptions -= NameLookupFlags::ProtocolMembers;
     lookupOptions -= NameLookupFlags::PerformConformanceCheck;
 
-    for (auto member : tc.lookupConstructors(fromCtor, superclassTy,
-                                             lookupOptions)) {
+    for (auto member : TypeChecker::lookupConstructors(fromCtor, superclassTy,
+                                                       lookupOptions)) {
       auto superclassCtor = dyn_cast<ConstructorDecl>(member.getValueDecl());
       if (!superclassCtor || !superclassCtor->isDesignatedInit() ||
           superclassCtor == ctor)
@@ -2146,7 +2145,8 @@ TypeCheckFunctionBodyUntilRequest::evaluate(Evaluator &evaluator,
   if (tc.DebugTimeFunctionBodies || tc.WarnLongFunctionBodies)
     timer.emplace(AFD, tc.DebugTimeFunctionBodies, tc.WarnLongFunctionBodies);
 
-  tc.validateDecl(AFD);
+  // FIXME(InterfaceTypeRequest): Remove this.
+  (void)AFD->getInterfaceType();
   tc.checkDefaultArguments(AFD->getParameters(), AFD);
 
   BraceStmt *body = AFD->getBody();

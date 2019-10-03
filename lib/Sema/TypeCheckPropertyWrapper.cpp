@@ -126,13 +126,9 @@ static ConstructorDecl *findInitialValueInit(ASTContext &ctx,
   }
 
   // Retrieve the type of the 'value' property.
-  if (!valueVar->hasInterfaceType())
-    ctx.getLazyResolver()->resolveDeclSignature(valueVar);
   Type valueVarType = valueVar->getValueInterfaceType();
 
   // Retrieve the parameter type of the initializer.
-  if (!init->hasInterfaceType())
-    ctx.getLazyResolver()->resolveDeclSignature(init);
   Type paramType;
   if (auto *curriedInitType =
           init->getInterfaceType()->getAs<AnyFunctionType>()) {
@@ -301,9 +297,9 @@ PropertyWrapperTypeInfoRequest::evaluate(
   if (!valueVar)
     return PropertyWrapperTypeInfo();
 
-  if (!valueVar->hasInterfaceType())
-    static_cast<TypeChecker &>(*ctx.getLazyResolver()).validateDecl(valueVar);
-
+  // FIXME: Remove this one
+  (void)valueVar->getInterfaceType();
+  
   PropertyWrapperTypeInfo result;
   result.valueVar = valueVar;
   result.wrappedValueInit =
@@ -494,7 +490,8 @@ AttachedPropertyWrapperTypeRequest::evaluate(Evaluator &evaluator,
   options |= TypeResolutionFlags::AllowUnboundGenerics;
 
   auto &tc = *static_cast<TypeChecker *>(ctx.getLazyResolver());
-  if (tc.validateType(customAttr->getTypeLoc(), resolution, options))
+  if (TypeChecker::validateType(tc.Context, customAttr->getTypeLoc(),
+                                resolution, options))
     return ErrorType::get(ctx);
 
   return customAttr->getTypeLoc().getType();
@@ -528,7 +525,8 @@ PropertyWrapperBackingPropertyTypeRequest::evaluate(
   unsigned index = binding->getPatternEntryIndexForVarDecl(var);
   TypeChecker &tc = *static_cast<TypeChecker *>(ctx.getLazyResolver());
   if (binding->isInitialized(index)) {
-    tc.validateDecl(var);
+    // FIXME(InterfaceTypeRequest): Remove this.
+    (void)var->getInterfaceType();
     if (!binding->isInitializerChecked(index))
       tc.typeCheckPatternBinding(binding, index);
 
@@ -538,7 +536,8 @@ PropertyWrapperBackingPropertyTypeRequest::evaluate(
   }
 
   // Compute the type of the property to plug in to the wrapper type.
-  tc.validateDecl(var);
+  // FIXME(InterfaceTypeRequest): Remove this.
+  (void)var->getInterfaceType();
   Type propertyType = var->getType();
   if (!propertyType || propertyType->hasError())
     return Type();
@@ -608,17 +607,11 @@ Type swift::computeWrappedValueType(VarDecl *var, Type backingStorageType,
   // Follow the chain of wrapped value properties.
   Type wrappedValueType = backingStorageType;
   DeclContext *dc = var->getDeclContext();
-  ASTContext &ctx = dc->getASTContext();
   for (unsigned i : range(realLimit)) {
     auto wrappedInfo = var->getAttachedPropertyWrapperTypeInfo(i);
     if (!wrappedInfo)
       return wrappedValueType;
 
-    if (!wrappedInfo.valueVar->hasInterfaceType()) {
-      static_cast<TypeChecker&>(*ctx.getLazyResolver()).validateDecl(
-          wrappedInfo.valueVar);
-    }
-    
     wrappedValueType = wrappedValueType->getTypeOfMember(
         dc->getParentModule(),
         wrappedInfo.valueVar,

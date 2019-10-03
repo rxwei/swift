@@ -1740,8 +1740,6 @@ namespace {
         return nullptr;
       }
 
-      tc.validateDecl(fn);
-      
       // Form a reference to the function. The bridging operations are generic,
       // so we need to form substitutions and compute the resulting type.
       auto genericSig = fn->getGenericSignature();
@@ -1920,14 +1918,13 @@ namespace {
       auto maxFloatTypeDecl = tc.Context.get_MaxBuiltinFloatTypeDecl();
 
       if (!maxFloatTypeDecl ||
-          !maxFloatTypeDecl->hasInterfaceType() ||
+          !maxFloatTypeDecl->getInterfaceType() ||
           !maxFloatTypeDecl->getDeclaredInterfaceType()->is<BuiltinFloatType>()) {
         tc.diagnose(expr->getLoc(), diag::no_MaxBuiltinFloatType_found);
         return nullptr;
       }
 
-      tc.validateDecl(maxFloatTypeDecl);
-      auto maxType = maxFloatTypeDecl->getUnderlyingTypeLoc().getType();
+      auto maxType = maxFloatTypeDecl->getUnderlyingType();
 
       DeclName initName(tc.Context, DeclBaseName::createConstructor(),
                         { tc.Context.Id_floatLiteral });
@@ -2127,16 +2124,15 @@ namespace {
         return witness;
       };
 
-      auto associatedTypeArray = 
+      auto *interpolationProto = 
         tc.getProtocol(expr->getLoc(),
-             KnownProtocolKind::ExpressibleByStringInterpolation)
-          ->lookupDirect(tc.Context.Id_StringInterpolation);
-      if (associatedTypeArray.empty()) {
+             KnownProtocolKind::ExpressibleByStringInterpolation);
+      auto associatedTypeDecl = interpolationProto->getAssociatedType(
+          tc.Context.Id_StringInterpolation);
+      if (associatedTypeDecl == nullptr) {
         tc.diagnose(expr->getStartLoc(), diag::interpolation_broken_proto);
         return nullptr;
       }
-      auto associatedTypeDecl =
-        cast<AssociatedTypeDecl>(associatedTypeArray.front());
       auto interpolationType =
         simplifyType(DependentMemberType::get(openedType, associatedTypeDecl));
 
@@ -2309,17 +2305,6 @@ namespace {
 
       auto *choiceLocator = cs.getConstraintLocator(locator.withPathElement(
           ConstraintLocator::ImplicitlyUnwrappedDisjunctionChoice));
-
-      // We won't have a disjunction choice if we have an IUO function call
-      // wrapped in parens (i.e. '(s.foo)()'), because we only create a
-      // single constraint to bind to an optional type. So, we can just return
-      // false here as there's no need to force unwrap.
-      if (!solution.DisjunctionChoices.count(choiceLocator)) {
-        auto type = choice.getDecl()->getInterfaceType();
-        assert((type && type->is<AnyFunctionType>()) &&
-               "expected a function type");
-        return false;
-      }
 
       return solution.getDisjunctionChoice(choiceLocator);
     }
@@ -4166,7 +4151,6 @@ namespace {
       assert(method && "Didn't find a method?");
 
       // The declaration we found must be exposed to Objective-C.
-      tc.validateDecl(method);
       if (!method->isObjC()) {
         // If the method declaration lies in a protocol and we're providing
         // a default implementation of the method through a protocol extension
@@ -4293,11 +4277,11 @@ namespace {
 
         auto locator = cs.getConstraintLocator(
             E, LocatorPathElt::KeyPathComponent(i));
-        if (kind == KeyPathExpr::Component::Kind::UnresolvedSubscript) {
-          locator =
-            cs.getConstraintLocator(locator,
-                                    ConstraintLocator::SubscriptMember);
-        }
+
+        // Adjust the locator such that it includes any additional elements to
+        // point to the component's callee, e.g a SubscriptMember for a
+        // subscript component.
+        locator = cs.getCalleeLocator(locator);
 
         bool isDynamicMember = false;
         // If this is an unresolved link, make sure we resolved it.
@@ -5434,10 +5418,11 @@ Expr *ExprRewriter::coerceCallArguments(
   auto params = funcType->getParams();
 
   // Local function to produce a locator to refer to the given parameter.
-  auto getArgLocator = [&](unsigned argIdx, unsigned paramIdx)
-                         -> ConstraintLocatorBuilder {
+  auto getArgLocator =
+      [&](unsigned argIdx, unsigned paramIdx,
+          ParameterTypeFlags flags) -> ConstraintLocatorBuilder {
     return locator.withPathElement(
-             LocatorPathElt::ApplyArgToParam(argIdx, paramIdx));
+        LocatorPathElt::ApplyArgToParam(argIdx, paramIdx, flags));
   };
 
   bool matchCanFail =
@@ -5549,8 +5534,9 @@ Expr *ExprRewriter::coerceCallArguments(
         }
 
         // Convert the argument.
-        auto convertedArg = coerceToType(arg, param.getPlainType(),
-                                         getArgLocator(argIdx, paramIdx));
+        auto convertedArg = coerceToType(
+            arg, param.getPlainType(),
+            getArgLocator(argIdx, paramIdx, param.getParameterFlags()));
         if (!convertedArg)
           return nullptr;
 
@@ -5670,8 +5656,9 @@ Expr *ExprRewriter::coerceCallArguments(
       convertedArg = cs.TC.buildAutoClosureExpr(dc, arg, closureType);
       cs.cacheExprTypes(convertedArg);
     } else {
-      convertedArg =
-          coerceToType(arg, paramType, getArgLocator(argIdx, paramIdx));
+      convertedArg = coerceToType(
+          arg, paramType,
+          getArgLocator(argIdx, paramIdx, param.getParameterFlags()));
     }
 
     if (!convertedArg)
@@ -6592,7 +6579,7 @@ Expr *ExprRewriter::coerceToType(Expr *expr, Type toType,
       fromFunc = fromFunc->getWithoutDifferentiability()
           ->castTo<FunctionType>();
       expr = cs.cacheType(new (tc.Context)
-          AutoDiffFunctionExtractOriginalExpr(expr, fromFunc));
+          DifferentiableFunctionExtractOriginalExpr(expr, fromFunc));
     }
     // Handle implicit conversion to @differentiable.
     maybeDiagnoseUnsupportedDifferentiableConversion(cs, expr, toFunc);
@@ -6603,7 +6590,7 @@ Expr *ExprRewriter::coerceToType(Expr *expr, Type toType,
           ->withExtInfo(newEI)
           ->castTo<FunctionType>();
       expr = cs.cacheType(new (tc.Context)
-                              AutoDiffFunctionExpr(expr, fromFunc));
+                              DifferentiableFunctionExpr(expr, fromFunc));
     }
 
     // If we have a ClosureExpr, then we can safely propagate the 'no escape'
@@ -7722,7 +7709,8 @@ bool ConstraintSystem::applySolutionFixes(Expr *E, const Solution &solution) {
           auto *transformedExpr = result->second.second;
           // Since this closure has been transformed into something
           // else let's look inside transformed expression instead.
-          return {true, transformedExpr};
+          transformedExpr->walk(*this);
+          return {false, E};
         }
       }
 

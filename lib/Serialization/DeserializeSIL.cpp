@@ -13,7 +13,9 @@
 #define DEBUG_TYPE "deserialize"
 #include "DeserializeSIL.h"
 
+#include "BCReadingExtras.h"
 #include "DeserializationErrors.h"
+#include "ModuleFile.h"
 #include "SILFormat.h"
 
 #include "SILSerializationFunctionBuilder.h"
@@ -27,8 +29,6 @@
 #include "swift/SIL/SILDebugScope.h"
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/SILUndef.h"
-#include "swift/Serialization/BCReadingExtras.h"
-#include "swift/Serialization/ModuleFile.h"
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
@@ -465,20 +465,21 @@ SILDeserializer::readSILFunctionChecked(DeclID FID, SILFunction *existingFn,
   DeclID clangNodeOwnerID;
   TypeID funcTyID;
   IdentifierID replacedFunctionID;
-  GenericSignatureID genericEnvID;
+  GenericSignatureID genericSigID;
   unsigned rawLinkage, isTransparent, isSerialized, isThunk,
       isWithoutactuallyEscapingThunk, isGlobal, inlineStrategy,
       // SWIFT_ENABLE_TENSORFLOW
       optimizationMode, effect, numSpecAttrs, numDifferentiableAttrs,
-      hasQualifiedOwnership, isWeakLinked, isDynamic, isExactSelfClass;
+      hasQualifiedOwnership, isWeakImported, LIST_VER_TUPLE_PIECES(available),
+      isDynamic, isExactSelfClass;
   ArrayRef<uint64_t> SemanticsIDs;
   SILFunctionLayout::readRecord(
       scratch, rawLinkage, isTransparent, isSerialized, isThunk,
       isWithoutactuallyEscapingThunk, isGlobal, inlineStrategy,
-      // SWIFT_ENABLE_TENSORFLOW
       optimizationMode, effect, numSpecAttrs, numDifferentiableAttrs,
-      hasQualifiedOwnership, isWeakLinked, isDynamic, isExactSelfClass,
-      funcTyID, replacedFunctionID, genericEnvID,
+      hasQualifiedOwnership, isWeakImported, LIST_VER_TUPLE_PIECES(available),
+      isDynamic, isExactSelfClass,
+      funcTyID, replacedFunctionID, genericSigID,
       clangNodeOwnerID, SemanticsIDs);
 
   if (funcTyID == 0) {
@@ -582,7 +583,15 @@ SILDeserializer::readSILFunctionChecked(DeclID FID, SILFunction *existingFn,
     fn->setGlobalInit(isGlobal == 1);
     fn->setEffectsKind(EffectsKind(effect));
     fn->setOptimizationMode(OptimizationMode(optimizationMode));
-    fn->setWeakLinked(isWeakLinked);
+    fn->setAlwaysWeakImported(isWeakImported);
+
+    llvm::VersionTuple available;
+    DECODE_VER_TUPLE(available);
+    fn->setAvailabilityForLinkage(
+      available.empty()
+      ? AvailabilityContext::alwaysAvailable()
+      : AvailabilityContext(VersionRange::allGTE(available)));
+
     fn->setIsDynamic(IsDynamicallyReplaceable_t(isDynamic));
     fn->setIsExactSelfClass(IsExactSelfClass_t(isExactSelfClass));
     if (replacedFunction)
@@ -656,15 +665,19 @@ SILDeserializer::readSILFunctionChecked(DeclID FID, SILFunction *existingFn,
 
     uint64_t jvpNameId;
     uint64_t vjpNameId;
+    GenericSignatureID derivativeGenSigID;
     unsigned source;
     ArrayRef<uint64_t> rawParameterIndices;
     SmallVector<Requirement, 8> requirements;
 
     SILDifferentiableAttrLayout::readRecord(scratch, jvpNameId, vjpNameId,
-                                            source, rawParameterIndices);
+                                            derivativeGenSigID, source,
+                                            rawParameterIndices);
 
     StringRef jvpName = MF->getIdentifier(jvpNameId).str();
     StringRef vjpName = MF->getIdentifier(vjpNameId).str();
+
+    auto derivativeGenSig = MF->getGenericSignature(derivativeGenSigID);
 
     SmallVector<unsigned, 8> parameterIndices(rawParameterIndices.begin(),
                                               rawParameterIndices.end());
@@ -672,16 +685,16 @@ SILDeserializer::readSILFunctionChecked(DeclID FID, SILFunction *existingFn,
         MF->getContext(), fn->getLoweredFunctionType()->getNumParameters(),
         parameterIndices);
     SILAutoDiffIndices indices(source, parameterIndexSubset);
-    MF->readGenericRequirements(requirements, SILCursor);
 
-    auto *attr = SILDifferentiableAttr::create(SILMod, indices, requirements,
-                                               jvpName, vjpName);
+    auto *attr = SILDifferentiableAttr::create(
+        SILMod, indices, jvpName, vjpName, derivativeGenSig);
     fn->addDifferentiableAttr(attr);
   }
 
   GenericEnvironment *genericEnv = nullptr;
   if (!declarationOnly)
-    genericEnv = MF->getGenericEnvironment(genericEnvID);
+    if (auto *genericSig = MF->getGenericSignature(genericSigID))
+      genericEnv = genericSig->getGenericEnvironment();
 
   // If the next entry is the end of the block, then this function has
   // no contents.
@@ -1105,17 +1118,16 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
     break;
   }
   // SWIFT_ENABLE_TENSORFLOW
-  case SIL_INST_AUTODIFF_FUNCTION:
-    SILInstAutoDiffFunctionLayout::readRecord(scratch, /*order*/ Attr,
-                                              /*numParams*/ Attr2, NumArguments,
-                                              ListOfValues);
-    RawOpCode = (unsigned)SILInstructionKind::AutoDiffFunctionInst;
+  case SIL_INST_DIFFERENTIABLE_FUNCTION:
+    SILInstDifferentiableFunctionLayout::readRecord(
+        scratch, /*order*/ Attr, /*numParams*/ Attr2, NumArguments,
+        ListOfValues);
+    RawOpCode = (unsigned)SILInstructionKind::DifferentiableFunctionInst;
     break;
-  case SIL_INST_AUTODIFF_FUNCTION_EXTRACT:
-    SILInstAutoDiffFunctionExtractLayout::readRecord(scratch, TyID, TyCategory,
-                                                     ValID, /*extractee*/ Attr,
-                                                     /*order*/ Attr2);
-    RawOpCode = (unsigned)SILInstructionKind::AutoDiffFunctionExtractInst;
+  case SIL_INST_DIFFERENTIABLE_FUNCTION_EXTRACT:
+    SILInstDifferentiableFunctionExtractLayout::readRecord(
+        scratch, TyID, TyCategory, ValID, /*extractee*/ Attr, /*order*/ Attr2);
+    RawOpCode = (unsigned)SILInstructionKind::DifferentiableFunctionExtractInst;
     break;
   case SIL_INST_NO_OPERAND:
     SILInstNoOperandLayout::readRecord(scratch, RawOpCode);
@@ -1508,7 +1520,7 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
     break;
   }
   // SWIFT_ENABLE_TENSORFLOW
-  case SILInstructionKind::AutoDiffFunctionInst: {
+  case SILInstructionKind::DifferentiableFunctionInst: {
     auto numParamIndices = ListOfValues.size() - NumArguments * 3;
     auto rawParamIndices =
        map<SmallVector<unsigned, 8>>(ListOfValues.take_front(numParamIndices),
@@ -1522,21 +1534,22 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
       auto silTy = getSILType(astTy, (SILValueCategory)ListOfValues[i+1]);
       operands.push_back(getLocalValue(ListOfValues[i+2], silTy));
     }
-    ResultVal = Builder.createAutoDiffFunction(Loc, paramIndices,
-        /*differentiationOrder*/ Attr, operands[0],
+    ResultVal = Builder.createDifferentiableFunction(
+        Loc, paramIndices, /*differentiationOrder*/ Attr, operands[0],
         ArrayRef<SILValue>(operands).drop_front());
     break;
   }
-  case SILInstructionKind::AutoDiffFunctionExtractInst: {
+  case SILInstructionKind::DifferentiableFunctionExtractInst: {
     auto astTy = MF->getType(TyID);
     auto silTy = getSILType(astTy, SILValueCategory::Object);
     auto val = getLocalValue(ValID, silTy);
-    AutoDiffFunctionExtractee extractee(Attr);
+    DifferentiableFunctionExtractee extractee(Attr);
     auto order = Attr2;
     ResultVal =
-        Builder.createAutoDiffFunctionExtract(Loc, extractee, order, val);
+        Builder.createDifferentiableFunctionExtract(Loc, extractee, order, val);
     break;
   }
+  // SWIFT_ENABLE_TENSORFLOW END
   case SILInstructionKind::AllocGlobalInst: {
     // Format: Name and type. Use SILOneOperandLayout.
     StringRef Name = MF->getIdentifierText(ValID);
@@ -2620,21 +2633,23 @@ bool SILDeserializer::hasSILFunction(StringRef Name,
   DeclID clangOwnerID;
   TypeID funcTyID;
   IdentifierID replacedFunctionID;
-  GenericSignatureID genericEnvID;
+  GenericSignatureID genericSigID;
   unsigned rawLinkage, isTransparent, isSerialized, isThunk,
       isWithoutactuallyEscapingThunk, isGlobal, inlineStrategy,
       // SWIFT_ENABLE_TENSORFLOW
       optimizationMode, effect, numSpecAttrs, numDifferentiableAttrs,
-      hasQualifiedOwnership, isWeakLinked, isDynamic, isExactSelfClass;
+      hasQualifiedOwnership, isWeakImported, LIST_VER_TUPLE_PIECES(available),
+      isDynamic, isExactSelfClass;
   ArrayRef<uint64_t> SemanticsIDs;
   SILFunctionLayout::readRecord(
       scratch, rawLinkage, isTransparent, isSerialized, isThunk,
       isWithoutactuallyEscapingThunk, isGlobal, inlineStrategy,
-      optimizationMode, effect, numSpecAttrs,
       // SWIFT_ENABLE_TENSORFLOW
-      numDifferentiableAttrs, hasQualifiedOwnership, isWeakLinked, isDynamic,
-      isExactSelfClass,
-      funcTyID, replacedFunctionID, genericEnvID, clangOwnerID, SemanticsIDs);
+      optimizationMode, effect, numSpecAttrs, numDifferentiableAttrs,
+      hasQualifiedOwnership, isWeakImported, LIST_VER_TUPLE_PIECES(available),
+      isDynamic, isExactSelfClass,
+      funcTyID, replacedFunctionID, genericSigID,
+      clangOwnerID, SemanticsIDs);
   auto linkage = fromStableSILLinkage(rawLinkage);
   if (!linkage) {
     LLVM_DEBUG(llvm::dbgs() << "invalid linkage code " << rawLinkage

@@ -364,6 +364,30 @@ public:
 
     /// Whether client code cannot use the attribute.
     UserInaccessible = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 7),
+
+    /// Whether adding this attribute can break API
+    APIBreakingToAdd = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 8),
+
+    /// Whether removing this attribute can break API
+    APIBreakingToRemove = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 9),
+
+    /// Whether adding this attribute can break ABI
+    ABIBreakingToAdd = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 10),
+
+    /// Whether removing this attribute can break ABI
+    ABIBreakingToRemove = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 11),
+
+    /// The opposite of APIBreakingToAdd
+    APIStableToAdd = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 12),
+
+    /// The opposite of APIBreakingToRemove
+    APIStableToRemove = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 13),
+
+    /// The opposite of ABIBreakingToAdd
+    ABIStableToAdd = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 14),
+
+    /// The opposite of ABIBreakingToRemove
+    ABIStableToRemove = 1ull << (unsigned(DeclKindIndex::Last_Decl) + 15),
   };
 
   LLVM_READNONE
@@ -444,6 +468,27 @@ public:
 
   static bool isUserInaccessible(DeclAttrKind DK) {
     return getOptions(DK) & UserInaccessible;
+  }
+
+  static bool isAddingBreakingABI(DeclAttrKind DK) {
+    return getOptions(DK) & ABIBreakingToAdd;
+  }
+
+#define DECL_ATTR(_, CLASS, OPTIONS, ...)                                                         \
+  static constexpr bool isOptionSetFor##CLASS(DeclAttrOptions Bit) {                              \
+    return (OPTIONS) & Bit;                                                                       \
+  }
+#include "swift/AST/Attr.def"
+
+  static bool isAddingBreakingAPI(DeclAttrKind DK) {
+    return getOptions(DK) & APIBreakingToAdd;
+  }
+
+  static bool isRemovingBreakingABI(DeclAttrKind DK) {
+    return getOptions(DK) & ABIBreakingToRemove;
+  }
+  static bool isRemovingBreakingAPI(DeclAttrKind DK) {
+    return getOptions(DK) & APIBreakingToRemove;
   }
 
   bool isDeclModifier() const {
@@ -1508,13 +1553,13 @@ class DifferentiableAttr final
   FuncDecl *VJPFunction = nullptr;
   /// The differentiation parameters' indices, resolved by the type checker.
   AutoDiffParameterIndices *ParameterIndices = nullptr;
-  /// The trailing where clause, if it exists.
+  /// The trailing where clause (optional).
   TrailingWhereClause *WhereClause = nullptr;
-  /// The requirements for autodiff associated functions. Resolved by the type
-  /// checker based on the original function's generic signature and the
-  /// attribute's where clause requirements. This is set only if the attribute's
-  /// where clause exists.
-  MutableArrayRef<Requirement> Requirements;
+  /// The generic signature for autodiff associated functions. Resolved by the
+  /// type checker based on the original function's generic signature and the
+  /// attribute's where clause requirements. This is set only if the attribute
+  /// has a where clause.
+  GenericSignature *DerivativeGenericSignature = nullptr;
 
   explicit DifferentiableAttr(ASTContext &context, bool implicit,
                               SourceLoc atLoc, SourceRange baseRange,
@@ -1530,7 +1575,7 @@ class DifferentiableAttr final
                               AutoDiffParameterIndices *indices,
                               Optional<DeclNameWithLoc> jvp,
                               Optional<DeclNameWithLoc> vjp,
-                              ArrayRef<Requirement> requirements);
+                              GenericSignature *derivativeGenericSignature);
 
 public:
   static DifferentiableAttr *create(ASTContext &context, bool implicit,
@@ -1547,7 +1592,7 @@ public:
                                     AutoDiffParameterIndices *indices,
                                     Optional<DeclNameWithLoc> jvp,
                                     Optional<DeclNameWithLoc> vjp,
-                                    ArrayRef<Requirement> requirements);
+                                    GenericSignature *derivativeGenSig);
 
   /// Get the optional 'jvp:' function name and location.
   /// Use this instead of `getJVPFunction` to check whether the attribute has a
@@ -1582,9 +1627,13 @@ public:
 
   TrailingWhereClause *getWhereClause() const { return WhereClause; }
 
-  ArrayRef<Requirement> getRequirements() const { return Requirements; }
-  MutableArrayRef<Requirement> getRequirements() { return Requirements; }
-  void setRequirements(ASTContext &context, ArrayRef<Requirement> requirements);
+  GenericSignature *getDerivativeGenericSignature() const {
+    return DerivativeGenericSignature;
+  }
+  void setDerivativeGenericSignature(ASTContext &context,
+                                     GenericSignature* derivativeGenSig) {
+    DerivativeGenericSignature = derivativeGenSig;
+  }
 
   FuncDecl *getJVPFunction() const { return JVPFunction; }
   void setJVPFunction(FuncDecl *decl);
@@ -1596,10 +1645,10 @@ public:
     return ParameterIndices->parameters == other.ParameterIndices->parameters;
   }
 
-  /// Computes the derivative generic environment for the given
-  /// `@differentiable` attribute and original function.
+  /// Get the derivative generic environment for the given `@differentiable`
+  /// attribute and original function.
   GenericEnvironment *
-  computeDerivativeGenericEnvironment(AbstractFunctionDecl *original) const;
+  getDerivativeGenericEnvironment(AbstractFunctionDecl *original) const;
 
   // Print the attribute to the given stream.
   // If `omitWrtClause` is true, omit printing the `wrt:` clause.

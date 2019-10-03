@@ -16,6 +16,7 @@
 
 #include "swift/AST/Builtins.h"
 #include "swift/AST/ASTContext.h"
+#include "swift/AST/FileUnit.h"
 #include "swift/AST/GenericEnvironment.h"
 #include "swift/AST/GenericSignatureBuilder.h"
 #include "swift/AST/Module.h"
@@ -193,7 +194,7 @@ getBuiltinGenericFunction(Identifier Id,
                           ArrayRef<AnyFunctionType::Param> ArgParamTypes,
                           Type ResType,
                           GenericParamList *GenericParams,
-                          GenericEnvironment *Env,
+                          GenericSignature *Sig,
                           // SWIFT_ENABLE_TENSORFLOW
                           bool Rethrows = false) {
   assert(GenericParams && "Missing generic parameters");
@@ -231,7 +232,7 @@ getBuiltinGenericFunction(Identifier Id,
                                paramList,
                                TypeLoc::withoutLoc(ResType), DC);
 
-  func->setGenericEnvironment(Env);
+  func->setGenericSignature(Sig);
   func->computeType();
   func->setValidationToChecked();
   func->setImplicit();
@@ -468,6 +469,7 @@ namespace {
     // SWIFT_ENABLE_TENSORFLOW
     // Deleted `GenericSig` because we make that later, when `build()` is
     // called.
+    // SWIFT_ENABLE_TENSORFLOW END
     SmallVector<AnyFunctionType::Param, 4> InterfaceParams;
     Type InterfaceResult;
 
@@ -475,8 +477,9 @@ namespace {
     // Accumulate params and requirements here, so that we can make the
     // appropriate `AbstractGenericSignatureRequest` when `build()` is called.
     bool Rethrows = false;
-    SmallVector<GenericTypeParamType *, 2> addedParameters;
+    SmallVector<GenericTypeParamType *, 2> genericParamTypes;
     SmallVector<Requirement, 2> addedRequirements;
+    // SWIFT_ENABLE_TENSORFLOW END
 
   public:
     BuiltinGenericSignatureBuilder(ASTContext &ctx, unsigned numGenericParams = 1)
@@ -486,10 +489,9 @@ namespace {
 
       // SWIFT_ENABLE_TENSORFLOW
       for (auto gp : GenericTypeParams) {
-        addedParameters.push_back(
+        genericParamTypes.push_back(
             gp->getDeclaredInterfaceType()->castTo<GenericTypeParamType>());
       }
-
     }
 
     template <class G>
@@ -517,17 +519,19 @@ namespace {
     void setRethrows(bool rethrows = true) {
       Rethrows = rethrows;
     }
+    // SWIFT_ENABLE_TENSORFLOW END
 
     ValueDecl *build(Identifier name) {
       auto GenericSig = evaluateOrDefault(
           Context.evaluator,
           AbstractGenericSignatureRequest{
-            nullptr, std::move(addedParameters), std::move(addedRequirements)},
+            nullptr, std::move(genericParamTypes), std::move(addedRequirements)},
           nullptr);
       return getBuiltinGenericFunction(name, InterfaceParams,
                                        InterfaceResult,
                                        TheGenericParamList,
-                                       GenericSig->createGenericEnvironment(),
+                                       // SWIFT_ENABLE_TENSORFLOW
+                                       GenericSig,
                                        /*Rethrows*/ Rethrows);
     }
 
@@ -1280,6 +1284,15 @@ static ValueDecl *getOnceOperation(ASTContext &Context,
   }
 }
 
+static ValueDecl *getPolymorphicBinaryOperation(ASTContext &ctx,
+                                                Identifier id) {
+  BuiltinGenericSignatureBuilder builder(ctx);
+  builder.addParameter(makeGenericParam());
+  builder.addParameter(makeGenericParam());
+  builder.setResult(makeGenericParam());
+  return builder.build(id);
+}
+
 /// An array of the overloaded builtin kinds.
 static const OverloadedBuiltinKind OverloadedBuiltinKinds[] = {
   OverloadedBuiltinKind::None,
@@ -1290,8 +1303,10 @@ static const OverloadedBuiltinKind OverloadedBuiltinKinds[] = {
    OverloadedBuiltinKind::Special,
 #define BUILTIN_CAST_OR_BITCAST_OPERATION(id, attrs, name) \
    OverloadedBuiltinKind::Special,
-#define BUILTIN_BINARY_OPERATION(id, name, attrs, overload) \
-   OverloadedBuiltinKind::overload,
+#define BUILTIN_BINARY_OPERATION_OVERLOADED_STATIC(id, name, attrs, overload)  \
+  OverloadedBuiltinKind::overload,
+#define BUILTIN_BINARY_OPERATION_POLYMORPHIC(id, name, attrs)                  \
+  OverloadedBuiltinKind::Special,
 #define BUILTIN_BINARY_OPERATION_WITH_OVERFLOW(id, name, _, attrs, overload) \
    OverloadedBuiltinKind::overload,
 #define BUILTIN_BINARY_PREDICATE(id, name, attrs, overload) \
@@ -1342,6 +1357,13 @@ inline bool isBuiltinTypeOverloaded(Type T, OverloadedBuiltinKind OK) {
     return true;
   }
   llvm_unreachable("bad overloaded builtin kind");
+}
+
+bool swift::canBuiltinBeOverloadedForType(BuiltinValueKind ID, Type Ty) {
+  if (ID == BuiltinValueKind::None)
+    return false;
+
+  return isBuiltinTypeOverloaded(Ty, OverloadedBuiltinKinds[unsigned(ID)]);
 }
 
 /// Table of string intrinsic names indexed by enum value.
@@ -1886,10 +1908,21 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
     return getEndUnpairedAccessOperation(Context, Id);
 
 #define BUILTIN(id, name, Attrs)
-#define BUILTIN_BINARY_OPERATION(id, name, attrs, overload)  case BuiltinValueKind::id:
+#define BUILTIN_BINARY_OPERATION(id, name, attrs)
+#define BUILTIN_BINARY_OPERATION_OVERLOADED_STATIC(id, name, attrs, overload)  \
+  case BuiltinValueKind::id:
 #include "swift/AST/Builtins.def"
     if (Types.size() != 1) return nullptr;
-    return getBinaryOperation(Id, Types[0]);
+      return getBinaryOperation(Id, Types[0]);
+
+#define BUILTIN(id, name, attrs)
+#define BUILTIN_BINARY_OPERATION(id, name, attrs)
+#define BUILTIN_BINARY_OPERATION_POLYMORPHIC(id, name, attrs)                  \
+  case BuiltinValueKind::id:
+#include "swift/AST/Builtins.def"
+      if (!Types.empty())
+        return nullptr;
+      return getPolymorphicBinaryOperation(Context, Id);
 
 #define BUILTIN(id, name, Attrs)
 #define BUILTIN_BINARY_OPERATION_WITH_OVERFLOW(id, name, _, attrs, overload)  case BuiltinValueKind::id:
@@ -2142,6 +2175,21 @@ StringRef swift::getBuiltinName(BuiltinValueKind ID) {
 #define BUILTIN(Id, Name, Attrs) \
   case BuiltinValueKind::Id: \
     return Name;
+#include "swift/AST/Builtins.def"
+  }
+  llvm_unreachable("bad BuiltinValueKind");
+}
+
+bool swift::isPolymorphicBuiltin(BuiltinValueKind id) {
+  switch (id) {
+  case BuiltinValueKind::None:
+    llvm_unreachable("no builtin kind");
+#define BUILTIN(Id, Name, Attrs)                                               \
+  case BuiltinValueKind::Id:                                                   \
+    return false;
+#define BUILTIN_BINARY_OPERATION_POLYMORPHIC(Id, Name, Attrs)                  \
+  case BuiltinValueKind::Id:                                                   \
+    return true;
 #include "swift/AST/Builtins.def"
   }
   llvm_unreachable("bad BuiltinValueKind");

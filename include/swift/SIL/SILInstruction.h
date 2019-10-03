@@ -525,6 +525,16 @@ public:
     getAllOperands()[Num1].swap(getAllOperands()[Num2]);
   }
 
+private:
+  /// Predicate used to filter OperandTypeRange.
+  struct OperandToType;
+
+public:
+  using OperandTypeRange =
+      OptionalTransformRange<ArrayRef<Operand>, OperandToType>;
+  // NOTE: We always skip type dependent operands.
+  OperandTypeRange getOperandTypes() const;
+
   /// Return the list of results produced by this instruction.
   bool hasResults() const { return !getResults().empty(); }
   SILInstructionResultArray getResults() const { return getResultsImpl(); }
@@ -700,6 +710,22 @@ SILInstruction::getOperandValues(bool skipTypeDependentOperands) const
     -> OperandValueRange {
   return OperandValueRange(getAllOperands(),
                            OperandToValue(*this, skipTypeDependentOperands));
+}
+
+struct SILInstruction::OperandToType {
+  const SILInstruction &i;
+
+  OperandToType(const SILInstruction &i) : i(i) {}
+
+  Optional<SILType> operator()(const Operand &use) const {
+    if (i.isTypeDependentOperand(use))
+      return None;
+    return use.get()->getType();
+  }
+};
+
+inline auto SILInstruction::getOperandTypes() const -> OperandTypeRange {
+  return OperandTypeRange(getAllOperands(), OperandToType(*this));
 }
 
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
@@ -1645,9 +1671,7 @@ public:
   bool hasDynamicLifetime() const { return dynamicLifetime; }
 
   // Return the type of the memory stored in the alloc_box.
-  SILType getAddressType() const {
-    return getBoxType()->getFieldType(getModule(), 0).getAddressType();
-  }
+  SILType getAddressType() const;
 
   /// Return the underlying variable declaration associated with this
   /// allocation, or null if this is a temporary allocation.
@@ -1839,7 +1863,8 @@ public:
   /// The operand number of the first argument.
   static unsigned getArgumentOperandNumber() { return NumStaticOperands; }
 
-  SILValue getCallee() const { return getAllOperands()[Callee].get(); }
+  const Operand *getCalleeOperand() const { return &getAllOperands()[Callee]; }
+  SILValue getCallee() const { return getCalleeOperand()->get(); }
 
   /// Gets the origin of the callee by looking through function type conversions
   /// until we find a function_ref, partial_apply, or unrecognized value.
@@ -3011,7 +3036,7 @@ public:
 
   /// Looks up the BuiltinKind of this builtin. Returns None if this is
   /// not a builtin.
-  llvm::Optional<BuiltinValueKind> getBuiltinKind() const {
+  Optional<BuiltinValueKind> getBuiltinKind() const {
     auto I = getBuiltinInfo();
     if (I.ID == BuiltinValueKind::None)
       return None;
@@ -3291,16 +3316,6 @@ public:
 
 class EndBorrowInst;
 
-struct UseToEndBorrow {
-  Optional<EndBorrowInst *> operator()(Operand *use) const {
-    if (auto endBorrow = dyn_cast<EndBorrowInst>(use->getUser())) {
-      return endBorrow;
-    } else {
-      return None;
-    }
-  }
-};
-
 /// Represents a load of a borrowed value. Must be paired with an end_borrow
 /// instruction in its use-def list.
 class LoadBorrowInst :
@@ -3314,14 +3329,14 @@ public:
                              LValue->getType().getObjectType()) {}
 
   using EndBorrowRange =
-      OptionalTransformRange<use_range, UseToEndBorrow, use_iterator>;
+      decltype(std::declval<ValueBase>().getUsersOfType<EndBorrowInst>());
 
   /// Return a range over all EndBorrow instructions for this BeginBorrow.
   EndBorrowRange getEndBorrows() const;
 };
 
 inline auto LoadBorrowInst::getEndBorrows() const -> EndBorrowRange {
-  return EndBorrowRange(getUses(), UseToEndBorrow());
+  return getUsersOfType<EndBorrowInst>();
 }
 
 /// Represents the begin scope of a borrowed value. Must be paired with an
@@ -3337,7 +3352,7 @@ class BeginBorrowInst
 
 public:
   using EndBorrowRange =
-      OptionalTransformRange<use_range, UseToEndBorrow, use_iterator>;
+      decltype(std::declval<ValueBase>().getUsersOfType<EndBorrowInst>());
 
   /// Return a range over all EndBorrow instructions for this BeginBorrow.
   EndBorrowRange getEndBorrows() const;
@@ -3352,7 +3367,7 @@ public:
 };
 
 inline auto BeginBorrowInst::getEndBorrows() const -> EndBorrowRange {
-  return EndBorrowRange(getUses(), UseToEndBorrow());
+  return getUsersOfType<EndBorrowInst>();
 }
 
 /// Represents a store of a borrowed value into an address. Returns the borrowed
@@ -3491,6 +3506,8 @@ enum class SILAccessEnforcement : uint8_t {
 };
 StringRef getSILAccessEnforcementName(SILAccessEnforcement enforcement);
 
+class EndAccessInst;
+
 /// Begins an access scope. Must be paired with an end_access instruction
 /// along every path.
 class BeginAccessInst
@@ -3562,13 +3579,8 @@ public:
     return getOperand();
   }
 
-private:
-    /// Predicate used to filter EndAccessRange.
-  struct UseToEndAccess;
-
-public:
   using EndAccessRange =
-    OptionalTransformRange<use_range, UseToEndAccess, use_iterator>;
+      decltype(std::declval<ValueBase>().getUsersOfType<EndAccessInst>());
 
   /// Find all the associated end_access instructions for this begin_access.
   EndAccessRange getEndAccesses() const;
@@ -3609,18 +3621,8 @@ public:
   }
 };
 
-struct BeginAccessInst::UseToEndAccess {
-  Optional<EndAccessInst *> operator()(Operand *use) const {
-    if (auto access = dyn_cast<EndAccessInst>(use->getUser())) {
-      return access;
-    } else {
-      return None;
-    }
-  }
-};
-
 inline auto BeginAccessInst::getEndAccesses() const -> EndAccessRange {
-  return EndAccessRange(getUses(), UseToEndAccess());
+  return getUsersOfType<EndAccessInst>();
 }
 
 /// Begins an access without requiring a paired end_access.
@@ -7213,7 +7215,10 @@ private:
          ProfileCounter FalseBBCount, SILFunction &F);
 
 public:
-  SILValue getCondition() const { return getAllOperands()[ConditionIdx].get(); }
+  const Operand *getConditionOperand() const {
+    return &getAllOperands()[ConditionIdx];
+  }
+  SILValue getCondition() const { return getConditionOperand()->get(); }
   void setCondition(SILValue newCondition) {
     getAllOperands()[ConditionIdx].set(newCondition);
   }
@@ -7257,6 +7262,11 @@ public:
   MutableArrayRef<Operand> getFalseOperands() {
     // The remaining arguments are 'false' operands.
     return getAllOperands().slice(NumFixedOpers + getNumTrueArgs());
+  }
+
+  /// Returns true if \p op is mapped to the condition operand of the cond_br.
+  bool isConditionOperand(Operand *op) const {
+    return getConditionOperand() == op;
   }
 
   bool isConditionOperandIndex(unsigned OpIndex) const {
@@ -7831,13 +7841,13 @@ class TryApplyInst final
 };
 
 // SWIFT_ENABLE_TENSORFLOW
-/// `autodiff_function` - given a function and differentiation indices and its
-/// associated differentiation functions, create an `@differentiable` function that
-/// represents a bundle of these functions and configurations.
-class AutoDiffFunctionInst final :
+/// `differentiable_function` - given a function and differentiation indices and
+/// its associated differentiation functions, create an `@differentiable`
+/// function that represents a bundle of these functions and configurations.
+class DifferentiableFunctionInst final :
     public InstructionBaseWithTrailingOperands<
-               SILInstructionKind::AutoDiffFunctionInst,
-               AutoDiffFunctionInst, OwnershipForwardingSingleValueInst> {
+               SILInstructionKind::DifferentiableFunctionInst,
+               DifferentiableFunctionInst, OwnershipForwardingSingleValueInst> {
 private:
   friend SILBuilder;
   /// Differentiation parameter indices.
@@ -7849,19 +7859,17 @@ private:
   /// this is the new AD model or the legacy reverse-mode AD model.
   unsigned numOperands;
 
-  AutoDiffFunctionInst(SILModule &module, SILDebugLocation debugLoc,
-                       AutoDiffIndexSubset *parameterIndices,
-                       unsigned differentiationOrder,
-                       SILValue originalFunction,
-                       ArrayRef<SILValue> associatedFunctions);
+  DifferentiableFunctionInst(SILModule &module, SILDebugLocation debugLoc,
+                             AutoDiffIndexSubset *parameterIndices,
+                             unsigned differentiationOrder,
+                             SILValue originalFunction,
+                             ArrayRef<SILValue> associatedFunctions);
 
 public:
-  static AutoDiffFunctionInst *create(SILModule &module,
-                                      SILDebugLocation debugLoc,
-                                      AutoDiffIndexSubset *parameterIndices,
-                                      unsigned differentiationOrder,
-                                      SILValue originalFunction,
-                                      ArrayRef<SILValue> associatedFunctions);
+  static DifferentiableFunctionInst *create(
+      SILModule &module, SILDebugLocation debugLoc,
+      AutoDiffIndexSubset *parameterIndices, unsigned differentiationOrder,
+      SILValue originalFunction, ArrayRef<SILValue> associatedFunctions);
 
   static SILType getAutoDiffType(SILValue original,
                                  unsigned differentiationOrder,
@@ -7899,12 +7907,13 @@ public:
                                  AutoDiffAssociatedFunctionKind kind) const;
 };
 
-/// `autodiff_function_extract` - given an `@differentiable` function representing a
-/// bundle of the original function and associated functions, extract the
-/// specified function.
-class AutoDiffFunctionExtractInst
-    : public InstructionBase<SILInstructionKind::AutoDiffFunctionExtractInst,
-                             OwnershipForwardingSingleValueInst> {
+/// `differentiable_function_extract` - given an `@differentiable` function
+/// representing a bundle of the original function and associated functions,
+/// extract the specified function.
+class DifferentiableFunctionExtractInst
+    : public InstructionBase<
+          SILInstructionKind::DifferentiableFunctionExtractInst,
+          OwnershipForwardingSingleValueInst> {
 public:
   struct Extractee {
     enum innerty : unsigned {
@@ -7937,7 +7946,7 @@ private:
                    unsigned differentiationOrder, SILModule &module);
 
 public:
-  explicit AutoDiffFunctionExtractInst(
+  explicit DifferentiableFunctionExtractInst(
       SILModule &module, SILDebugLocation debugLoc, Extractee extractee,
       unsigned differentiationOrder, SILValue theFunction);
 
@@ -7968,7 +7977,9 @@ public:
   }
 };
 
-typedef AutoDiffFunctionExtractInst::Extractee AutoDiffFunctionExtractee;
+typedef DifferentiableFunctionExtractInst::Extractee
+    DifferentiableFunctionExtractee;
+// SWIFT_ENABLE_TENSORFLOW END
 
 // This is defined out of line to work around the fact that this depends on
 // PartialApplyInst being defined, but PartialApplyInst is a subclass of

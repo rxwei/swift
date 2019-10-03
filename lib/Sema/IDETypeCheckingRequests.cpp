@@ -34,7 +34,7 @@ namespace swift {
 
 // Define request evaluation functions for each of the IDE type check requests.
 static AbstractRequestFunction *ideTypeCheckRequestFunctions[] = {
-#define SWIFT_REQUEST(Zone, Name)                      \
+#define SWIFT_REQUEST(Zone, Name, Sig, Caching, LocOptions)                    \
 reinterpret_cast<AbstractRequestFunction *>(&Name::evaluateRequest),
 #include "swift/Sema/IDETypeCheckingRequestIDZone.def"
 #undef SWIFT_REQUEST
@@ -56,9 +56,7 @@ static bool isExtensionAppliedInternal(const DeclContext *DC, Type BaseTy,
   if (!ED->isConstrainedExtension())
     return true;
 
-  TypeChecker *TC = &TypeChecker::createForContext((DC->getASTContext()));
-  TC->validateExtension(const_cast<ExtensionDecl *>(ED));
-
+  (void)TypeChecker::createForContext(DC->getASTContext());
   GenericSignature *genericSig = ED->getGenericSignature();
   SubstitutionMap substMap = BaseTy->getContextSubstitutionMap(
       DC->getParentModule(), ED->getExtendedNominal());
@@ -104,11 +102,6 @@ TypeRelationCheckRequest::evaluate(Evaluator &evaluator,
                                    TypeRelationCheckInput Owner) const {
   Optional<constraints::ConstraintKind> CKind;
   switch (Owner.Relation) {
-  case TypeRelation::EqualTo:
-    return Owner.Pair.FirstTy->isEqual(Owner.Pair.SecondTy);
-  case TypeRelation::PossiblyEqualTo:
-    CKind = constraints::ConstraintKind::Bind;
-    break;
   case TypeRelation::ConvertTo:
     CKind = constraints::ConstraintKind::Conversion;
     break;

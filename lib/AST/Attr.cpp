@@ -42,6 +42,29 @@ static_assert(IsTriviallyDestructible<DeclAttributes>::value,
 static_assert(IsTriviallyDestructible<TypeAttributes>::value,
               "TypeAttributes are BumpPtrAllocated; the d'tor is never called");
 
+#define DECL_ATTR(Name, Id, ...)                                                                     \
+static_assert(DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::ABIBreakingToAdd) != \
+              DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::ABIStableToAdd),     \
+              #Name " needs to specify either ABIBreakingToAdd or ABIStableToAdd");
+#include "swift/AST/Attr.def"
+
+#define DECL_ATTR(Name, Id, ...)                                                                        \
+static_assert(DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::ABIBreakingToRemove) != \
+              DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::ABIStableToRemove),     \
+              #Name " needs to specify either ABIBreakingToRemove or ABIStableToRemove");
+#include "swift/AST/Attr.def"
+
+#define DECL_ATTR(Name, Id, ...)                                                                     \
+static_assert(DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::APIBreakingToAdd) != \
+              DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::APIStableToAdd),     \
+              #Name " needs to specify either APIBreakingToAdd or APIStableToAdd");
+#include "swift/AST/Attr.def"
+
+#define DECL_ATTR(Name, Id, ...)                                                                        \
+static_assert(DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::APIBreakingToRemove) != \
+              DeclAttribute::isOptionSetFor##Id(DeclAttribute::DeclAttrOptions::APIStableToRemove),     \
+              #Name " needs to specify either APIBreakingToRemove or APIStableToRemove");
+#include "swift/AST/Attr.def"
 
 // Only allow allocation of attributes using the allocator in ASTContext.
 void *AttributeBase::operator new(size_t Bytes, ASTContext &C,
@@ -513,8 +536,11 @@ static void printDifferentiableAttrArguments(
   // Print 'where' clause, if any.
   // First, filter out requirements satisfied by the original function's
   // generic signature. They should not be printed.
+  ArrayRef<Requirement> derivativeRequirements;
+  if (auto *derivativeGenSig = attr->getDerivativeGenericSignature())
+    derivativeRequirements = derivativeGenSig->getRequirements();
   auto requirementsToPrint =
-      makeFilterRange(attr->getRequirements(), [&](Requirement req) {
+      makeFilterRange(derivativeRequirements, [&](Requirement req) {
         if (auto *originalGenSig = original->getGenericSignature())
           if (originalGenSig->isRequirementSatisfied(req))
             return false;
@@ -1433,11 +1459,11 @@ DifferentiableAttr::DifferentiableAttr(ASTContext &context, bool implicit,
                                        AutoDiffParameterIndices *indices,
                                        Optional<DeclNameWithLoc> jvp,
                                        Optional<DeclNameWithLoc> vjp,
-                                       ArrayRef<Requirement> requirements)
+                                       GenericSignature *derivativeGenSig)
     : DeclAttribute(DAK_Differentiable, atLoc, baseRange, implicit),
       linear(linear), JVP(std::move(jvp)), VJP(std::move(vjp)),
       ParameterIndices(indices) {
-  setRequirements(context, requirements);
+  setDerivativeGenericSignature(context, derivativeGenSig);
 }
 
 DifferentiableAttr *
@@ -1462,17 +1488,12 @@ DifferentiableAttr::create(ASTContext &context, bool implicit,
                            AutoDiffParameterIndices *indices,
                            Optional<DeclNameWithLoc> jvp,
                            Optional<DeclNameWithLoc> vjp,
-                           ArrayRef<Requirement> requirements) {
+                           GenericSignature *derivativeGenSig) {
   void *mem = context.Allocate(sizeof(DifferentiableAttr),
                                alignof(DifferentiableAttr));
   return new (mem) DifferentiableAttr(context, implicit, atLoc, baseRange,
                                       linear, indices, std::move(jvp),
-                                      std::move(vjp), requirements);
-}
-
-void DifferentiableAttr::setRequirements(ASTContext &context,
-                                         ArrayRef<Requirement> requirements) {
-  Requirements = context.AllocateCopy(requirements);
+                                      std::move(vjp), derivativeGenSig);
 }
 
 void DifferentiableAttr::setJVPFunction(FuncDecl *decl) {
@@ -1487,25 +1508,12 @@ void DifferentiableAttr::setVJPFunction(FuncDecl *decl) {
     VJP = {decl->getFullName(), DeclNameLoc(decl->getNameLoc())};
 }
 
-GenericEnvironment *DifferentiableAttr::computeDerivativeGenericEnvironment(
+GenericEnvironment *DifferentiableAttr::getDerivativeGenericEnvironment(
     AbstractFunctionDecl *original) const {
-  // If `@differentiable` attribute has no requirements, return original
-  // function's generic environment.
-  if (getRequirements().empty())
-    return original->getGenericEnvironment();
-  // Otherwise, build derivative generic sigunature.
-  GenericSignatureBuilder builder(original->getASTContext());
-  // Add original function's generic signature.
-  builder.addGenericSignature(original->getGenericSignature());
-  using FloatingRequirementSource =
-      GenericSignatureBuilder::FloatingRequirementSource;
-  // Add `@differentiable` attribute requirements.
-  for (auto req : getRequirements())
-    builder.addRequirement(req, FloatingRequirementSource::forAbstract(),
-                           original->getModuleContext());
-  auto *derivativeGenSig = std::move(builder).computeGenericSignature(
-      getLocation(), /*allowConcreteGenericParams=*/true);
-  return derivativeGenSig->createGenericEnvironment();
+  GenericEnvironment *derivativeGenEnv = original->getGenericEnvironment();
+  if (auto *derivativeGenSig = getDerivativeGenericSignature())
+    return derivativeGenEnv = derivativeGenSig->getGenericEnvironment();
+  return original->getGenericEnvironment();
 }
 
 void DifferentiableAttr::print(llvm::raw_ostream &OS, const Decl *D,

@@ -112,8 +112,8 @@ void SILFunctionBuilder::addFunctionAttributes(SILFunction *F,
                 indices)).str();
       }
       auto *silDiffAttr = SILDifferentiableAttr::create(
-          M, indices, A->getRequirements(), M.allocateCopy(jvpName),
-          M.allocateCopy(vjpName));
+          M, indices, M.allocateCopy(jvpName), M.allocateCopy(vjpName),
+          A->getDerivativeGenericSignature());
 #ifndef NDEBUG
       // Verify that no existing attributes have the same indices.
       for (auto *existingAttr : F->getDifferentiableAttrs()) {
@@ -220,8 +220,8 @@ SILFunctionBuilder::getOrCreateFunction(SILLocation loc, SILDeclRef constant,
     if (constant.isForeign && decl->hasClangNode())
       F->setClangNodeOwner(decl);
 
-    if (decl->isWeakImported(/*forModule=*/nullptr, availCtx))
-      F->setWeakLinked();
+    F->setAvailabilityForLinkage(decl->getAvailabilityForLinkage());
+    F->setAlwaysWeakImported(decl->isAlwaysWeakImported());
 
     if (auto *accessor = dyn_cast<AccessorDecl>(decl)) {
       auto *storage = accessor->getStorage();

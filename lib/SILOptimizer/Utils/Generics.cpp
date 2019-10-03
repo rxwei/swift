@@ -527,12 +527,13 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
 
   // SWIFT_ENABLE_TENSORFLOW
   // Disable specialization for instructions that are operands of
-  // `autodiff_function` instructions.
+  // `differentiable_function` instructions.
   if (Apply.getInstruction())
     for (auto result : Apply.getInstruction()->getResults())
       for (auto use : result->getUses())
-        if (isa<AutoDiffFunctionInst>(use->getUser()))
+        if (isa<DifferentiableFunctionInst>(use->getUser()))
           return false;
+  // SWIFT_ENABLE_TENSORFLOW END
 
   return true;
 }
@@ -872,7 +873,7 @@ getGenericEnvironmentAndSignatureWithRequirements(
         OrigGenSig, { }, std::move(RequirementsCopy)},
       nullptr);
 
-  auto NewGenEnv = NewGenSig->createGenericEnvironment();
+  auto NewGenEnv = NewGenSig->getGenericEnvironment();
   return { NewGenEnv, NewGenSig };
 }
 
@@ -1218,7 +1219,7 @@ public:
         M(M), SM(M.getSwiftModule()), Ctx(M.getASTContext()) {
 
     // Create the new generic signature using provided requirements.
-    SpecializedGenericEnv = SpecializedGenericSig->createGenericEnvironment();
+    SpecializedGenericEnv = SpecializedGenericSig->getGenericEnvironment();
 
     // Compute SubstitutionMaps required for re-mapping.
 
@@ -1541,7 +1542,7 @@ FunctionSignaturePartialSpecializer::
       Ctx.evaluator,
       AbstractGenericSignatureRequest{nullptr, AllGenericParams, AllRequirements},
       nullptr);
-  auto GenEnv = GenSig ? GenSig->createGenericEnvironment() : nullptr;
+  auto GenEnv = GenSig ? GenSig->getGenericEnvironment() : nullptr;
   return { GenEnv, GenSig };
 }
 

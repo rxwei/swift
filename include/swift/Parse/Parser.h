@@ -46,7 +46,6 @@ namespace llvm {
 namespace swift {
   class CodeCompletionCallbacks;
   class DefaultArgumentInitializer;
-  class DelayedParsingCallbacks;
   class DiagnosticEngine;
   class Expr;
   class Lexer;
@@ -165,14 +164,8 @@ public:
 
   LocalContext *CurLocalContext = nullptr;
 
-  DelayedParsingCallbacks *DelayedParseCB = nullptr;
-
   bool isDelayedParsingEnabled() const {
-    return DelayBodyParsing || DelayedParseCB != nullptr;
-  }
-
-  void setDelayedParsingCallbacks(DelayedParsingCallbacks *DelayedParseCB) {
-    this->DelayedParseCB = DelayedParseCB;
+    return DelayBodyParsing || SourceMgr.getCodeCompletionLoc().isValid();
   }
 
   void setCodeCompletionCallbacks(CodeCompletionCallbacks *Callbacks) {
@@ -554,11 +547,10 @@ public:
   ParsedTokenSyntax consumeIdentifierSyntax(bool allowDollarIdentifier = false) {
     assert(Tok.isAny(tok::identifier, tok::kw_self, tok::kw_Self));
 
-    Context.getIdentifier(Tok.getText());
-
     if (Tok.getText()[0] == '$' && !allowDollarIdentifier)
       diagnoseDollarIdentifier(Tok);
 
+    Tok.setKind(tok::identifier);
     return consumeTokenSyntax();
   }
 
@@ -702,6 +694,33 @@ public:
   /// avoids the foot-gun of not considering T1 starting the next line for a
   /// plain Tok.is(T1) check).
   bool skipUntilTokenOrEndOfLine(tok T1);
+
+  //-------------------------------------------------------------------------//
+  // Ignore token APIs.
+  // This is used when we skip gabage text in the source text. 
+
+  /// Ignore the current single token.
+  void ignoreToken();
+  void ignoreToken(tok Kind) {
+  /// Ignore the current single token asserting its kind.
+    assert(Tok.is(Kind));
+    ignoreToken();
+  }
+  /// Conditionally ignore the current single token if it matches with the \p
+  /// Kind.
+  bool ignoreIf(tok Kind) {
+    if (!Tok.is(Kind))
+      return false;
+    ignoreToken();
+    return true;
+  }
+  void ignoreSingle();
+  void ignoreUntil(tok Kind);
+
+  /// Ignore tokens until a token that starts with '>', and return true it if
+  /// found. Applies heuristics that are suitable when trying to find the end
+  /// of a list of generic parameters, generic arguments.
+  bool ignoreUntilGreaterInTypeList();
 
   /// If the parser is generating only a syntax tree, try loading the current
   /// node from a previously generated syntax tree.
@@ -857,7 +876,7 @@ public:
   ///
   /// If the input is malformed, this emits the specified error diagnostic.
   bool parseToken(tok K, SourceLoc &TokLoc, const Diagnostic &D);
-  llvm::Optional<ParsedTokenSyntax> parseTokenSyntax(tok K,
+  llvm::Optional<ParsedTokenSyntax> parseTokenSyntax(tok K, SourceLoc &TokLoc,
                                                      const Diagnostic &D);
 
   template<typename ...DiagArgTypes, typename ...ArgTypes>
@@ -884,7 +903,8 @@ public:
                             const Diagnostic &D);
 
   llvm::Optional<ParsedTokenSyntax>
-  parseMatchingTokenSyntax(tok K, Diag<> ErrorDiag, SourceLoc OtherLoc);
+  parseMatchingTokenSyntax(tok K, SourceLoc &TokLoc, Diag<> ErrorDiag,
+                           SourceLoc OtherLoc);
 
   /// Returns the proper location for a missing right brace, parenthesis, etc.
   SourceLoc getLocForMissingMatchingToken() const;
@@ -1197,9 +1217,13 @@ public:
 
   using TypeASTResult = ParserResult<TypeRepr>;
   using TypeResult = ParsedSyntaxResult<ParsedTypeSyntax>;
-  using TypeErrorResult = ParsedSyntaxResult<ParsedUnknownTypeSyntax>;
 
-  LayoutConstraint parseLayoutConstraint(Identifier LayoutConstraintID);
+  ParsedSyntaxResult<ParsedLayoutConstraintSyntax>
+  parseLayoutConstraintSyntax();
+
+  TypeResult parseTypeSyntax();
+  TypeResult parseTypeSyntax(Diag<> MessageID, bool HandleCodeCompletion = true,
+                             bool IsSILFuncDecl = false);
 
   TypeASTResult parseType();
   TypeASTResult parseType(Diag<> MessageID, bool HandleCodeCompletion = true,
@@ -1225,9 +1249,9 @@ public:
   /// When `isParsingQualifiedDeclName` is true:
   /// - Parses the type qualifier from a qualified decl name, and returns a
   ///   parser result for the type of the qualifier.
-  /// - Positions the parser at the final declaration name.
+  /// - Positions the parser at the '.' before the final declaration name.
   /// - For example, 'Foo.Bar.f' parses as 'Foo.Bar' and the parser gets
-  ///   positioned at 'f'.
+  ///   positioned at '.f'.
   /// - If there is no type qualification (e.g. when parsing just 'f'), returns
   ///   an empty parser error.
   TypeResult parseTypeIdentifier(bool isParsingQualifiedDeclName = false);
@@ -1238,8 +1262,8 @@ public:
   TypeResult parseOptionalType(ParsedTypeSyntax Base);
   TypeResult parseImplicitlyUnwrappedOptionalType(ParsedTypeSyntax Base);
 
-  TypeErrorResult parseTypeArray(ParsedTypeSyntax Base, SourceLoc BaseLoc);
-  TypeErrorResult parseOldStyleProtocolComposition();
+  TypeResult parseTypeArray(ParsedTypeSyntax Base, SourceLoc BaseLoc);
+  TypeResult parseOldStyleProtocolComposition();
 
   bool isOptionalToken(const Token &T) const;
   ParsedTokenSyntax consumeOptionalTokenSyntax();
@@ -1441,6 +1465,13 @@ public:
 
   bool canParseTypedPattern();
 
+  // SWIFT_ENABLE_TENSORFLOW
+  /// Determines whether a type qualifier for a decl name can be parsed. e.g.:
+  ///   'Foo.f' -> true
+  ///   'Foo.Bar.f' -> true
+  ///   'f' -> false
+  bool canParseTypeQualifierForDeclName();
+
   //===--------------------------------------------------------------------===//
   // Expression Parsing
   ParserResult<Expr> parseExpr(Diag<> ID) {
@@ -1635,8 +1666,19 @@ public:
   //===--------------------------------------------------------------------===//
   // Generics Parsing
 
+  ParserResult<GenericParamList> parseSILGenericParams();
+
+  ParserStatus parseSILGenericParamsSyntax(
+      Optional<ParsedGenericParameterClauseListSyntax> &result);
+
+  ParsedSyntaxResult<ParsedGenericParameterClauseSyntax>
+  parseGenericParameterClauseSyntax();
+
+  ParsedSyntaxResult<ParsedGenericWhereClauseSyntax>
+  parseGenericWhereClauseSyntax(bool &FirstTypeInComplete,
+                                bool AllowLayoutConstraints = false);
+
   ParserResult<GenericParamList> parseGenericParameters();
-  ParserResult<GenericParamList> parseGenericParameters(SourceLoc LAngleLoc);
   ParserStatus parseGenericParametersBeforeWhere(SourceLoc LAngleLoc,
                         SmallVectorImpl<GenericTypeParamDecl *> &GenericParams);
   ParserResult<GenericParamList> maybeParseGenericParams();
@@ -1649,7 +1691,7 @@ public:
     AssociatedType
   };
   ParserStatus
-  parseFreestandingGenericWhereClause(GenericParamList *&GPList,
+  parseFreestandingGenericWhereClause(GenericParamList *GPList,
                              WhereClauseKind kind=WhereClauseKind::Declaration);
 
   ParserStatus parseGenericWhereClause(

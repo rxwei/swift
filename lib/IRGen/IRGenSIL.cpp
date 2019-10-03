@@ -920,8 +920,10 @@ public:
   void visitBuiltinInst(BuiltinInst *i);
 
   // SWIFT_ENABLE_TENSORFLOW
-  void visitAutoDiffFunctionInst(AutoDiffFunctionInst *i);
-  void visitAutoDiffFunctionExtractInst(AutoDiffFunctionExtractInst *i);
+  void visitDifferentiableFunctionInst(DifferentiableFunctionInst *i);
+  void visitDifferentiableFunctionExtractInst(
+      DifferentiableFunctionExtractInst *i);
+  // SWIFT_ENABLE_TENSORFLOW END
 
   void visitFunctionRefBaseInst(FunctionRefBaseInst *i);
   void visitFunctionRefInst(FunctionRefInst *i);
@@ -1868,7 +1870,8 @@ void IRGenSILFunction::visitSILBasicBlock(SILBasicBlock *BB) {
 }
 
 // SWIFT_ENABLE_TENSORFLOW
-void IRGenSILFunction::visitAutoDiffFunctionInst(AutoDiffFunctionInst *i) {
+void IRGenSILFunction::
+visitDifferentiableFunctionInst(DifferentiableFunctionInst *i) {
   // The original function and associated functions can be thin or thick.
   auto origExp = getLoweredExplosion(i->getOriginalFunction());
   Explosion e;
@@ -1879,9 +1882,9 @@ void IRGenSILFunction::visitAutoDiffFunctionInst(AutoDiffFunctionInst *i) {
 }
 
 void IRGenSILFunction::
-visitAutoDiffFunctionExtractInst(AutoDiffFunctionExtractInst *i) {
+visitDifferentiableFunctionExtractInst(DifferentiableFunctionExtractInst *i) {
   unsigned structFieldOffset = 0;
-  if (i->getExtractee() != AutoDiffFunctionExtractee::Original)
+  if (i->getExtractee() != DifferentiableFunctionExtractee::Original)
     structFieldOffset = 1 + autodiff::getOffsetForAutoDiffAssociatedFunction(
       i->getDifferentiationOrder(), i->getAssociatedFunctionKind());
   unsigned fieldSize = 1;
@@ -1890,10 +1893,10 @@ visitAutoDiffFunctionExtractInst(AutoDiffFunctionExtractInst *i) {
     structFieldOffset *= 2;
     fieldSize = 2;
   }
-  auto adFnExp = getLoweredExplosion(i->getFunctionOperand());
+  auto diffFnExp = getLoweredExplosion(i->getFunctionOperand());
   Explosion e;
-  e.add(adFnExp.getRange(structFieldOffset, structFieldOffset + fieldSize));
-  (void)adFnExp.claimAll();
+  e.add(diffFnExp.getRange(structFieldOffset, structFieldOffset + fieldSize));
+  (void)diffFnExp.claimAll();
   setLoweredExplosion(i, e);
 }
 
@@ -2072,7 +2075,7 @@ void IRGenSILFunction::visitExistentialMetatypeInst(
   SILValue op = i->getOperand();
   SILType opType = op->getType();
 
-  switch (opType.getPreferredExistentialRepresentation(IGM.getSILModule())) {
+  switch (opType.getPreferredExistentialRepresentation()) {
   case ExistentialRepresentation::Metatype: {
     Explosion existential = getLoweredExplosion(op);
     emitMetatypeOfMetatype(*this, existential, opType, result);
@@ -4242,8 +4245,8 @@ void IRGenSILFunction::visitDeallocBoxInst(swift::DeallocBoxInst *i) {
 void IRGenSILFunction::visitAllocBoxInst(swift::AllocBoxInst *i) {
   assert(i->getBoxType()->getLayout()->getFields().size() == 1
          && "multi field boxes not implemented yet");
-  const TypeInfo &type = getTypeInfo(i->getBoxType()
-                                      ->getFieldType(IGM.getSILModule(), 0));
+  const TypeInfo &type = getTypeInfo(
+      getSILBoxFieldType(i->getBoxType(), IGM.getSILModule().Types, 0));
 
   // Derive name from SIL location.
   bool IsAnonymous = false;
@@ -4278,7 +4281,7 @@ void IRGenSILFunction::visitAllocBoxInst(swift::AllocBoxInst *i) {
 
   assert(i->getBoxType()->getLayout()->getFields().size() == 1 &&
          "box for a local variable should only have one field");
-  auto SILTy = i->getBoxType()->getFieldType(IGM.getSILModule(), 0);
+  auto SILTy = getSILBoxFieldType(i->getBoxType(), IGM.getSILModule().Types, 0);
   auto RealType = SILTy.getASTType();
   auto DbgTy = DebugTypeInfo::getLocalVariable(Decl, RealType, type);
 

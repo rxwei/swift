@@ -31,8 +31,8 @@ TypeRefBuilder::getRemoteAddrOfTypeRefPointer(const void *pointer) {
   // Find what type ref section the pointer resides in, if any.
   const ReflectionInfo *containingInfo = nullptr;
   for (auto &info : ReflectionInfos) {
-    auto start = (uint64_t)info.TypeReference.Metadata.startAddress();
-    auto size = (uint64_t)info.TypeReference.Metadata.size();
+    auto start = (uint64_t)info.TypeReference.startAddress();
+    auto size = (uint64_t)info.TypeReference.size();
     if (start <= (uint64_t)pointer && (uint64_t)pointer < start + size) {
        containingInfo = &info;
        break;
@@ -44,18 +44,18 @@ TypeRefBuilder::getRemoteAddrOfTypeRefPointer(const void *pointer) {
 
   return (uint64_t)pointer
     + containingInfo->RemoteStartAddress
-    - containingInfo->LocalStartAddress
-    + containingInfo->TypeReference.SectionOffset;
+    - containingInfo->LocalStartAddress;
 }
 
 TypeRefBuilder::TypeRefBuilder() : TC(*this) {}
 
 /// Normalize a mangled name so it can be matched with string equality.
-static std::string normalizeReflectionName(Demangler &dem, StringRef reflectionName) {
+std::string
+TypeRefBuilder::normalizeReflectionName(StringRef reflectionName) {
   reflectionName = dropSwiftManglingPrefix(reflectionName);
   
   // Remangle the reflection name to resolve symbolic references.
-  if (auto node = dem.demangleType(reflectionName)) {
+  if (auto node = demangleTypeRef(reflectionName)) {
     return mangleNode(node);
   }
 
@@ -64,10 +64,10 @@ static std::string normalizeReflectionName(Demangler &dem, StringRef reflectionN
 }
 
 /// Determine whether the given reflection protocol name matches.
-static bool reflectionNameMatches(Demangler &dem,
-                                  StringRef reflectionName,
-                                  StringRef searchName) {
-  auto normalized = normalizeReflectionName(dem, reflectionName);
+bool
+TypeRefBuilder::reflectionNameMatches(StringRef reflectionName,
+                                      StringRef searchName) {
+  auto normalized = normalizeReflectionName(reflectionName);
   return searchName.equals(normalized);
 }
 
@@ -86,28 +86,22 @@ lookupTypeWitness(const std::string &MangledTypeName,
   // Cache missed - we need to look through all of the assocty sections
   // for all images that we've been notified about.
   for (auto &Info : ReflectionInfos) {
-    uint64_t TypeRefOffset = Info.AssociatedType.SectionOffset
-                           - Info.TypeReference.SectionOffset;
-    uint64_t NameOffset = Info.AssociatedType.SectionOffset
-                        - Info.ReflectionString.SectionOffset;
-    for (const auto &AssocTyDescriptor : Info.AssociatedType.Metadata) {
-      if (!reflectionNameMatches(Dem,
-                 AssocTyDescriptor.getMangledConformingTypeName(TypeRefOffset),
+    for (const auto &AssocTyDescriptor : Info.AssociatedType) {
+      if (!reflectionNameMatches(
+                 AssocTyDescriptor.getMangledConformingTypeName(),
                  MangledTypeName))
         continue;
 
-      if (!reflectionNameMatches(Dem,
-                 AssocTyDescriptor.getMangledProtocolTypeName(TypeRefOffset),
-                 Protocol))
+      if (!reflectionNameMatches(AssocTyDescriptor.getMangledProtocolTypeName(),
+                                 Protocol))
         continue;
 
       for (auto &AssocTy : AssocTyDescriptor) {
-        if (Member.compare(AssocTy.getName(NameOffset)) != 0)
+        if (Member.compare(AssocTy.getName()) != 0)
           continue;
 
-        auto SubstitutedTypeName =
-            AssocTy.getMangledSubstitutedTypeName(TypeRefOffset);
-        auto Demangled = Dem.demangleType(SubstitutedTypeName);
+        auto SubstitutedTypeName = AssocTy.getMangledSubstitutedTypeName();
+        auto Demangled = demangleTypeRef(SubstitutedTypeName);
         auto *TypeWitness = swift::Demangle::decodeMangledType(*this, Demangled);
 
         AssociatedTypeCache.insert(std::make_pair(key, TypeWitness));
@@ -127,9 +121,7 @@ lookupSuperclass(const TypeRef *TR) {
   if (!FD.first->hasSuperclass())
     return nullptr;
 
-  auto TypeRefOffset = FD.second->Field.SectionOffset
-                     - FD.second->TypeReference.SectionOffset;
-  auto Demangled = Dem.demangleType(FD.first->getSuperclass(TypeRefOffset));
+  auto Demangled = demangleTypeRef(FD.first->getSuperclass());
   auto Unsubstituted = swift::Demangle::decodeMangledType(*this, Demangled);
   if (!Unsubstituted)
     return nullptr;
@@ -158,13 +150,11 @@ TypeRefBuilder::getFieldTypeInfo(const TypeRef *TR) {
   // On failure, fill out the cache with everything we know about.
   std::vector<std::pair<std::string, const TypeRef *>> Fields;
   for (auto &Info : ReflectionInfos) {
-    uint64_t TypeRefOffset = Info.Field.SectionOffset
-                           - Info.TypeReference.SectionOffset;
-    for (auto &FD : Info.Field.Metadata) {
+    for (auto &FD : Info.Field) {
       if (!FD.hasMangledTypeName())
         continue;
-      auto CandidateMangledName = FD.getMangledTypeName(TypeRefOffset);
-      auto NormalizedName = normalizeReflectionName(Dem, CandidateMangledName);
+      auto CandidateMangledName = FD.getMangledTypeName();
+      auto NormalizedName = normalizeReflectionName(CandidateMangledName);
       FieldTypeInfoCache[NormalizedName] = {&FD, &Info};
       Dem.clear();
     }
@@ -190,13 +180,9 @@ bool TypeRefBuilder::getFieldTypeRefs(
     return false;
 
   for (auto &Field : *FD.first) {
-    auto TypeRefOffset = FD.second->Field.SectionOffset
-                       - FD.second->TypeReference.SectionOffset;
-    auto FieldOffset = FD.second->Field.SectionOffset
-                     - FD.second->ReflectionString.SectionOffset;
-    auto Low = (uintptr_t)(FD.second->ReflectionString.Metadata.startAddress());
-    auto High = (uintptr_t)(FD.second->ReflectionString.Metadata.endAddress());
-    auto FieldName = Field.getFieldName(FieldOffset, Low, High);
+    auto Low = (uintptr_t)(FD.second->ReflectionString.startAddress());
+    auto High = (uintptr_t)(FD.second->ReflectionString.endAddress());
+    auto FieldName = Field.getFieldName(Low, High);
 
     // Empty cases of enums do not have a type
     if (FD.first->isEnum() && !Field.hasMangledTypeName()) {
@@ -204,7 +190,7 @@ bool TypeRefBuilder::getFieldTypeRefs(
       continue;
     }
 
-    auto Demangled = Dem.demangleType(Field.getMangledTypeName(TypeRefOffset));
+    auto Demangled = demangleTypeRef(Field.getMangledTypeName());
     auto Unsubstituted = swift::Demangle::decodeMangledType(*this, Demangled);
     if (!Unsubstituted)
       return false;
@@ -234,17 +220,15 @@ TypeRefBuilder::getBuiltinTypeInfo(const TypeRef *TR) {
     return nullptr;
 
   for (auto Info : ReflectionInfos) {
-    uint64_t TypeRefOffset = Info.Builtin.SectionOffset
-                           - Info.TypeReference.SectionOffset;
-    for (auto &BuiltinTypeDescriptor : Info.Builtin.Metadata) {
+    for (auto &BuiltinTypeDescriptor : Info.Builtin) {
       assert(BuiltinTypeDescriptor.Size > 0);
       assert(BuiltinTypeDescriptor.getAlignment() > 0);
       assert(BuiltinTypeDescriptor.Stride > 0);
       if (!BuiltinTypeDescriptor.hasMangledTypeName())
         continue;
       auto CandidateMangledName =
-          BuiltinTypeDescriptor.getMangledTypeName(TypeRefOffset);
-      if (!reflectionNameMatches(Dem, CandidateMangledName, MangledName))
+          BuiltinTypeDescriptor.getMangledTypeName();
+      if (!reflectionNameMatches(CandidateMangledName, MangledName))
         continue;
       return &BuiltinTypeDescriptor;
     }
@@ -256,7 +240,7 @@ TypeRefBuilder::getBuiltinTypeInfo(const TypeRef *TR) {
 const CaptureDescriptor *
 TypeRefBuilder::getCaptureDescriptor(uint64_t RemoteAddress) {
   for (auto Info : ReflectionInfos) {
-    for (auto &CD : Info.Capture.Metadata) {
+    for (auto &CD : Info.Capture) {
       auto OtherAddr = (reinterpret_cast<uint64_t>(&CD) -
                         Info.LocalStartAddress + Info.RemoteStartAddress);
       if (OtherAddr == RemoteAddress)
@@ -269,15 +253,14 @@ TypeRefBuilder::getCaptureDescriptor(uint64_t RemoteAddress) {
 
 /// Get the unsubstituted capture types for a closure context.
 ClosureContextInfo
-TypeRefBuilder::getClosureContextInfo(const CaptureDescriptor &CD,
-                                      uint64_t TypeRefOffset) {
+TypeRefBuilder::getClosureContextInfo(const CaptureDescriptor &CD) {
   ClosureContextInfo Info;
 
   for (auto i = CD.capture_begin(), e = CD.capture_end(); i != e; ++i) {
     const TypeRef *TR = nullptr;
     if (i->hasMangledTypeName()) {
-      auto MangledName = i->getMangledTypeName(TypeRefOffset);
-      auto DemangleTree = Dem.demangleType(MangledName);
+      auto MangledName = i->getMangledTypeName();
+      auto DemangleTree = demangleTypeRef(MangledName);
       TR = swift::Demangle::decodeMangledType(*this, DemangleTree);
     }
     Info.CaptureTypes.push_back(TR);
@@ -286,14 +269,14 @@ TypeRefBuilder::getClosureContextInfo(const CaptureDescriptor &CD,
   for (auto i = CD.source_begin(), e = CD.source_end(); i != e; ++i) {
     const TypeRef *TR = nullptr;
     if (i->hasMangledTypeName()) {
-      auto MangledName = i->getMangledTypeName(TypeRefOffset);
-      auto DemangleTree = Dem.demangleType(MangledName);
+      auto MangledName = i->getMangledTypeName();
+      auto DemangleTree = demangleTypeRef(MangledName);
       TR = swift::Demangle::decodeMangledType(*this, DemangleTree);
     }
 
     const MetadataSource *MS = nullptr;
     if (i->hasMangledMetadataSource()) {
-      auto MangledMetadataSource = i->getMangledMetadataSource(TypeRefOffset);
+      auto MangledMetadataSource = i->getMangledMetadataSource();
       MS = MetadataSource::decode(MSB, MangledMetadataSource);
     }
 
@@ -312,7 +295,7 @@ TypeRefBuilder::getClosureContextInfo(const CaptureDescriptor &CD,
 void
 TypeRefBuilder::dumpTypeRef(StringRef MangledName,
                             std::ostream &OS, bool printTypeName) {
-  auto DemangleTree = Dem.demangleType(MangledName);
+  auto DemangleTree = demangleTypeRef(MangledName);
   auto TypeName = nodeToString(DemangleTree);
   OS << TypeName << '\n';
   auto TR = swift::Demangle::decodeMangledType(*this, DemangleTree);
@@ -328,26 +311,22 @@ TypeRefBuilder::dumpTypeRef(StringRef MangledName,
 
 void TypeRefBuilder::dumpFieldSection(std::ostream &OS) {
   for (const auto &sections : ReflectionInfos) {
-    uint64_t TypeRefOffset = sections.Field.SectionOffset
-                           - sections.TypeReference.SectionOffset;
-    uint64_t NameOffset = sections.Field.SectionOffset
-                        - sections.ReflectionString.SectionOffset;
-    for (const auto &descriptor : sections.Field.Metadata) {
-      auto TypeDemangling = Dem.demangleType(
-         dropSwiftManglingPrefix(descriptor.getMangledTypeName(TypeRefOffset)));
+    for (const auto &descriptor : sections.Field) {
+      auto TypeDemangling = demangleTypeRef(
+         dropSwiftManglingPrefix(descriptor.getMangledTypeName()));
       auto TypeName = nodeToString(TypeDemangling);
       OS << TypeName << '\n';
       for (size_t i = 0; i < TypeName.size(); ++i)
         OS << '-';
       OS << '\n';
       for (auto &field : descriptor) {
-        auto Low = (uintptr_t)sections.ReflectionString.Metadata.startAddress();
-        auto High = (uintptr_t)sections.ReflectionString.Metadata.endAddress();
-        OS << std::string(field.getFieldName(NameOffset, Low, High).begin(),
-                          field.getFieldName(NameOffset, Low, High).end());
+        auto Low = (uintptr_t)sections.ReflectionString.startAddress();
+        auto High = (uintptr_t)sections.ReflectionString.endAddress();
+        OS << std::string(field.getFieldName(Low, High).begin(),
+                          field.getFieldName(Low, High).end());
         if (field.hasMangledTypeName()) {
           OS << ": ";
-          dumpTypeRef(field.getMangledTypeName(TypeRefOffset), OS);
+          dumpTypeRef(field.getMangledTypeName(), OS);
         } else {
           OS << "\n\n";
         }
@@ -358,26 +337,21 @@ void TypeRefBuilder::dumpFieldSection(std::ostream &OS) {
 
 void TypeRefBuilder::dumpAssociatedTypeSection(std::ostream &OS) {
   for (const auto &sections : ReflectionInfos) {
-    uint64_t TypeRefOffset = sections.AssociatedType.SectionOffset
-                           - sections.TypeReference.SectionOffset;
-    uint64_t NameOffset = sections.AssociatedType.SectionOffset
-                        - sections.ReflectionString.SectionOffset;
-    for (const auto &descriptor : sections.AssociatedType.Metadata) {
-      auto conformingTypeNode = Dem.demangleType(
-          descriptor.getMangledConformingTypeName(TypeRefOffset));
+    for (const auto &descriptor : sections.AssociatedType) {
+      auto conformingTypeNode = demangleTypeRef(
+          descriptor.getMangledConformingTypeName());
       auto conformingTypeName = nodeToString(conformingTypeNode);
-      auto protocolNode = Dem.demangleType(dropSwiftManglingPrefix(
-                         descriptor.getMangledProtocolTypeName(TypeRefOffset)));
+      auto protocolNode = demangleTypeRef(dropSwiftManglingPrefix(
+                         descriptor.getMangledProtocolTypeName()));
       auto protocolName = nodeToString(protocolNode);
 
       OS << "- " << conformingTypeName << " : " << protocolName;
       OS << '\n';
 
       for (const auto &associatedType : descriptor) {
-        std::string name = associatedType.getName(NameOffset);
+        std::string name = associatedType.getName();
         OS << "typealias " << name << " = ";
-        dumpTypeRef(
-               associatedType.getMangledSubstitutedTypeName(TypeRefOffset), OS);
+        dumpTypeRef(associatedType.getMangledSubstitutedTypeName(), OS);
       }
     }
   }
@@ -385,13 +359,10 @@ void TypeRefBuilder::dumpAssociatedTypeSection(std::ostream &OS) {
 
 void TypeRefBuilder::dumpBuiltinTypeSection(std::ostream &OS) {
   for (const auto &sections : ReflectionInfos) {
-    uint64_t TypeRefOffset = sections.Builtin.SectionOffset
-                          - sections.TypeReference.SectionOffset;
-    for (const auto &descriptor : sections.Builtin.Metadata) {
-      auto typeName =
-          Demangle::demangleTypeAsString(
-                                  descriptor.getMangledTypeName(TypeRefOffset));
-
+    for (const auto &descriptor : sections.Builtin) {
+      auto typeNode = demangleTypeRef(descriptor.getMangledTypeName());
+      auto typeName = nodeToString(typeNode);
+      
       OS << "\n- " << typeName << ":\n";
       OS << "Size: " << descriptor.Size << "\n";
       OS << "Alignment: " << descriptor.getAlignment() << "\n";
@@ -430,10 +401,8 @@ void ClosureContextInfo::dump(std::ostream &OS) const {
 
 void TypeRefBuilder::dumpCaptureSection(std::ostream &OS) {
   for (const auto &sections : ReflectionInfos) {
-    uint64_t TypeRefOffset = sections.Capture.SectionOffset
-                           - sections.TypeReference.SectionOffset;
-    for (const auto &descriptor : sections.Capture.Metadata) {
-      auto info = getClosureContextInfo(descriptor, TypeRefOffset);
+    for (const auto &descriptor : sections.Capture) {
+      auto info = getClosureContextInfo(descriptor);
       info.dump(OS);
     }
   }

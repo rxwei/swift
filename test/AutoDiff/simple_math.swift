@@ -1,4 +1,6 @@
 // RUN: %target-run-simple-swift
+// NOTE(TF-813): verify that enabling forward-mode does not affect reverse-mode.
+// RUN: %target_run_simple_swift_forward_mode_differentiation
 // REQUIRES: executable_test
 
 import StdlibUnittest
@@ -309,6 +311,21 @@ SimpleMathTests.test("StructGeneric") {
   expectEqual(405, gradient(at: 3, in: fifthPower))
 }
 
+SimpleMathTests.test("StructWithNoDerivativeProperty") {
+  struct NoDerivativeProperty : Differentiable {
+    var x: Float
+    @noDerivative var y: Float
+  }
+  expectEqual(
+    NoDerivativeProperty.TangentVector(x: 1),
+    gradient(at: NoDerivativeProperty(x: 1, y: 1)) { s -> Float in
+      var tmp = s
+      tmp.y = tmp.x
+      return tmp.x
+    }
+  )
+}
+
 SimpleMathTests.test("SubsetIndices") {
   func grad(_ lossFunction: @differentiable (Float, Float) -> Float) -> Float {
     return gradient(at: 1) { x in lossFunction(x * x, 10.0) }
@@ -322,12 +339,13 @@ SimpleMathTests.test("SubsetIndices") {
 }
 
 SimpleMathTests.test("ForceUnwrapping") {
-  func bla<T: Differentiable & FloatingPoint>(_ t: T) -> (T, Float) where T == T.TangentVector {
+  func forceUnwrap<T: Differentiable & FloatingPoint>(_ t: T)
+    -> (T, Float) where T == T.TangentVector {
     gradient(at: t, Float(1)) { (x, y) in
       (x as! Float) * y
     }
   }
-  expectEqual((1, 2), bla(Float(2)))
+  expectEqual((1, 2), forceUnwrap(Float(2)))
 }
 
 runAllTests()

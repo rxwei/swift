@@ -18,7 +18,7 @@
 #ifndef SWIFT_SERIALIZATION_SILFORMAT_H
 #define SWIFT_SERIALIZATION_SILFORMAT_H
 
-#include "swift/Serialization/ModuleFormat.h"
+#include "ModuleFormat.h"
 
 namespace swift {
 namespace serialization {
@@ -174,8 +174,8 @@ namespace sil_block {
     SIL_TWO_OPERANDS_EXTRA_ATTR,
     // SWIFT_ENABLE_TENSORFLOW
     SIL_DIFFERENTIABLE_ATTR,
-    SIL_INST_AUTODIFF_FUNCTION,
-    SIL_INST_AUTODIFF_FUNCTION_EXTRACT,
+    SIL_INST_DIFFERENTIABLE_FUNCTION,
+    SIL_INST_DIFFERENTIABLE_FUNCTION_EXTRACT,
 
     // We also share these layouts from the decls block. Their enumerators must
     // not overlap with ours.
@@ -294,7 +294,8 @@ namespace sil_block {
                      // SWIFT_ENABLE_TENSORFLOW
                      BCVBR<8>,    // number of differentiable attributes
                      BCFixed<1>,  // has qualified ownership
-                     BCFixed<1>,  // must be weakly referenced
+                     BCFixed<1>,  // force weak linking
+                     BC_AVAIL_TUPLE, // availability for weak linking
                      BCFixed<1>,  // is dynamically replacable
                      BCFixed<1>,  // exact self class
                      TypeIDField, // SILFunctionType
@@ -320,6 +321,7 @@ namespace sil_block {
     SIL_DIFFERENTIABLE_ATTR,
     IdentifierIDField,    // JVP name.
     IdentifierIDField,    // VJP name.
+    GenericSignatureIDField, // Derivative function generic signature.
     BCVBR<8>,             // Result index.
     BCArray<ValueIDField> // Parameter indices.
   >;
@@ -410,16 +412,16 @@ namespace sil_block {
   >;
 
   // SWIFT_ENABLE_TENSORFLOW
-  using SILInstAutoDiffFunctionLayout = BCRecordLayout<
-    SIL_INST_AUTODIFF_FUNCTION,
+  using SILInstDifferentiableFunctionLayout = BCRecordLayout<
+    SIL_INST_DIFFERENTIABLE_FUNCTION,
     BCVBR<8>,             // differentiation order
     BCVBR<8>,             // number of function parameters
     BCVBR<8>,             // number of operands
     BCArray<ValueIDField> // parameter indices and operands
   >;
 
-  using SILInstAutoDiffFunctionExtractLayout = BCRecordLayout<
-    SIL_INST_AUTODIFF_FUNCTION_EXTRACT,
+  using SILInstDifferentiableFunctionExtractLayout = BCRecordLayout<
+    SIL_INST_DIFFERENTIABLE_FUNCTION_EXTRACT,
     TypeIDField,
     SILTypeCategoryField,
     ValueIDField,
