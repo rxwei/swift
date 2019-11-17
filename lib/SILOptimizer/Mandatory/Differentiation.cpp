@@ -458,6 +458,12 @@ private:
   /// corresponding linear map field declaration in the linear map struct.
   DenseMap<ApplyInst *, VarDecl *> linearMapFieldMap;
 
+  /// Mapping from aggregate projection operations in the original function to
+  /// the corresponding zero tangent vector initializer field declaration in
+  /// the linear map struct.
+  DenseMap<std::pair<SILValue, unsigned>, VarDecl *>
+      zeroTangentVectorInitializerMap;
+
   /// Mapping from predecessor-succcessor basic block pairs in the original
   /// function to the corresponding branching trace enum case.
   DenseMap<std::pair<SILBasicBlock *, SILBasicBlock *>, EnumElementDecl *>
@@ -686,7 +692,7 @@ private:
           params, silFnTy->getAllResultsInterfaceType().getASTType());
 
     auto *origBB = ai->getParent();
-    auto *linMapStruct = getLinearMapStruct(origBB);
+    auto *linearMapStruct = getLinearMapStruct(origBB);
     std::string linearMapName;
     switch (kind) {
     case AutoDiffLinearMapKind::Differential:
@@ -696,8 +702,30 @@ private:
       linearMapName = "pullback_" + llvm::itostr(linearMapFieldMap.size());
       break;
     }
-    auto *linearMapDecl = addVarDecl(linMapStruct, linearMapName, astFnTy);
+    auto *linearMapDecl = addVarDecl(linearMapStruct, linearMapName, astFnTy);
     linearMapFieldMap.insert({ai, linearMapDecl});
+    return linearMapDecl;
+  }
+
+  VarDecl *addZeroTangentVectorInitializerDecl(
+      SILBasicBlock *origBB, SILValue aggregate, unsigned fieldIndex,
+      CanType zeroTangentType) {
+    auto fnType = FunctionType::get({}, zeroTangentType);
+    auto *linearMapStruct = getLinearMapStruct(origBB);
+    std::string linearMapName;
+    switch (kind) {
+    case AutoDiffLinearMapKind::Differential:
+      linearMapName = "differential_zero_" +
+          llvm::itostr(zeroTangentVectorInitializerMap.size());
+      break;
+    case AutoDiffLinearMapKind::Pullback:
+      linearMapName = "pullback_zero_" +
+          llvm::itostr(zeroTangentVectorInitializerMap.size());
+      break;
+    }
+    auto *linearMapDecl = addVarDecl(linearMapStruct, linearMapName, fnType);
+    zeroTangentVectorInitializerMap.insert(
+        {{aggregate, fieldIndex}, linearMapDecl});
     return linearMapDecl;
   }
 
@@ -1799,9 +1827,14 @@ void LinearMapInfo::generateDifferentiationDataStructures(
     linearMapStructEnumFields.insert({linearMapStruct, traceEnumField});
   }
 
-  // Add linear map fields to the linear map structs.
+  // Add linear map fields and zero tangent vector initializer fields to the
+  // linear map structs.
   for (auto &origBB : *original) {
     for (auto &inst : origBB) {
+      // Original: `apply %f(...) : $(T) -> U`
+      // Linear map:
+      // - Differential: `var <name>: (T') -> U'`
+      // - Pullback: `var <name>: (U') -> T'`
       if (auto *ai = dyn_cast<ApplyInst>(&inst)) {
         // Check for active 'inout' arguments.
         bool isInout = false;
@@ -1828,6 +1861,14 @@ void LinearMapInfo::generateDifferentiationDataStructures(
         LLVM_DEBUG(getADDebugStream() << "Adding linear map struct field for "
                                       << *ai);
         addLinearMapToStruct(context, ai, indices);
+      }
+      // Original: `(%elt1: $T1, %elt2: $T2, ...) = destructure_tuple %x
+      // Linear map:
+      //     var <name>: () -> $T1'
+      //     var <name>: () -> $T2'
+      //     ...
+      else if (auto *dti = dyn_cast<DestructureTupleInst>(&inst)) {
+        #error "Implement me"
       }
     }
   }
@@ -2842,8 +2883,7 @@ static void emitZeroIntoBuffer(
   auto *getter = builder.createWitnessMethod(
       loc, type, confRef, accessorDeclRef, silFnType);
   // %metatype = metatype $T
-  auto metatypeType = CanMetatypeType::get(
-      type, MetatypeRepresentation::Thick);
+  auto metatypeType = CanMetatypeType::get(type, MetatypeRepresentation::Thick);
   auto metatype = builder.createMetatype(
       loc, SILType::getPrimitiveObjectType(metatypeType));
   auto subMap = SubstitutionMap::getProtocolSubstitutions(
@@ -2851,6 +2891,40 @@ static void emitZeroIntoBuffer(
   builder.createApply(loc, getter, subMap, {bufferAccess, metatype},
                       /*isNonThrowing*/ false);
   builder.emitDestroyValueOperation(loc, getter);
+}
+
+/// Given a value of a `Differentiable`-conforming type, emits an `apply`
+/// instruction that calls its `zeroTangentVectorInitializer` property.
+static SILValue emitApplyZeroTangentVectorInitializerGetter(
+    SILBuilder &builder, SILValue self, SILLocation loc) {
+  auto &astCtx = builder.getASTContext();
+  auto *swiftMod = builder.getModule().getSwiftModule();
+  auto &typeConverter = builder.getModule().Types;
+  auto type = self->getType();
+  // Look up conformance to `Differentiable`.
+  auto *differentiableProto =
+      astCtx.getProtocol(KnownProtocolKind::Differentiable);
+  auto confRef = swiftMod->lookupConformance(
+      type.getASTType(), differentiableProto);
+  assert(!confRef.isInvalid() && "Missing conformance to `Differentiable`");
+  // Look up `Differentiable.zeroTangentVectorInitializer.getter`.
+  auto zeroTanInitLookup = differentiableProto->lookupDirect(
+      astCtx.Id_zeroTangentVectorInitializer);
+  auto *zeroTanInitDecl = cast<VarDecl>(zeroTanInitLookup.front());
+  assert(zeroTanInitDecl->isProtocolRequirement());
+  auto *accessorDecl = zeroTanInitDecl->getAccessor(AccessorKind::Get);
+  SILDeclRef accessorDeclRef(accessorDecl, SILDeclRef::Kind::Func);
+  auto silFnType = typeConverter.getConstantType(accessorDeclRef);
+  // %wm = witness_method ...
+  auto *getter = builder.createWitnessMethod(
+      loc, type.getASTType(), confRef, accessorDeclRef, silFnType);
+  auto subMap = SubstitutionMap::getProtocolSubstitutions(
+      differentiableProto, type.getASTType(), confRef);
+  auto result = builder.createApply(loc, getter, subMap, {self},
+                                    /*isNonThrowing*/ false);
+  assert(result->getType().is<SILFunctionType>());
+  builder.emitDestroyValueOperation(loc, getter);
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -3737,6 +3811,39 @@ public:
     // Create a new `switch_enum` instruction.
     getBuilder().createSwitchEnum(
         sei->getLoc(), getOpValue(sei->getOperand()), newDefaultBB, caseBBs);
+  }
+
+  // Get every differentiable element's `zeroTangentVectorInitializer`, and
+  // store them in the pullback struct.
+  void visitDestructureTupleInst(DestructureTupleInst *dti) {
+    TypeSubstCloner::visitDestructureTupleInst(dti);
+    auto *bb = dti->getParent();
+    for (auto elt : llvm::enumerate(dti->getResults())) {
+      auto zeroInit = emitApplyZeroTangentVectorInitializerGetter(
+          Builder, elt.value(), dti->getLoc());
+      pullbackValues[bb].push_back(zeroInit);
+    }
+  }
+
+  // Get every non-extracted differentiable element's
+  // `zeroTangentVectorInitializer`, and store them in the pullback struct.
+  void visitTupleElementAddrInst(TupleElementAddrInst *teai) {
+    TypeSubstCloner::visitTupleElementAddrInst(teai);
+    #error "Implement me"
+  }
+
+  // Get every non-extracted differentiable element's
+  // `zeroTangentVectorInitializer`, and store them in the pullback struct.
+  void visitStructExtractInst(StructExtractInst *sei) {
+    TypeSubstCloner::visitStructExtractInst(sei);
+    #error "Implement me"
+  }
+
+  // Get every non-extracted differentiable element's
+  // `zeroTangentVectorInitializer`, and store them in the pullback struct.
+  void visitStructElementAddrInst(StructElementAddrInst *seai) {
+    TypeSubstCloner::visitStructElementAddrInst(seai);
+    #error "Implement me"
   }
 
   // If an `apply` has active results or active inout parameters, replace it

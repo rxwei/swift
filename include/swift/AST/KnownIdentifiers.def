@@ -157,6 +157,7 @@ IDENTIFIER(scale)
 IDENTIFIER(x)
 // Differentiable
 IDENTIFIER(TangentVector)
+IDENTIFIER(zeroTangentVectorInitializer)
 IDENTIFIER(move)
 IDENTIFIER(differentiableVectorView)
 
