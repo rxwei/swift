@@ -52,22 +52,8 @@ BuiltinDifferentiableFunctionConstructorTests.test("UnaryLinear") {
     return v
   }
   let lin_foo = Builtin.linearFunction_arity1(foo, foo_transpose)
-  // TODO(SR-11845): Uncomment the following once `transpose(of:)` is available.
-  // let trans_foo = transpose(of: lin_foo)
-  // expectEqual(2, trans_foo(2))
-}
-
-BuiltinDifferentiableFunctionConstructorTests.test("BinaryLinear") {
-  func foo(_ x: Float, _ y: Float) -> Float {
-    return x + y
-  }
-  func foo_transpose(_ v: Float) -> (Float, Float) {
-    return (v, v)
-  }
-  let lin_foo = Builtin.linearFunction_arity2(foo, foo_transpose)
-  // TODO(SR-11845): Uncomment the following once `transpose(of:)` is available.
-  // let trans_foo = transpose(of: lin_foo)
-  // expectEqual((1, 1), trans_foo(1))
+  let trans_foo = transpose(of: lin_foo)
+  expectEqual(2, trans_foo(2))
 }
 
 runAllTests()
