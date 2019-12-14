@@ -96,6 +96,7 @@ static void addMandatoryOptPipeline(SILPassPipelinePlan &P) {
 
   // SWIFT_ENABLE_TENSORFLOW
   P.addDifferentiation();
+  P.addCanonicalizePartialApply();
   // Only run semantic arc opts if we are optimizing and if mandatory semantic
   // arc opts is explicitly enabled.
   //
