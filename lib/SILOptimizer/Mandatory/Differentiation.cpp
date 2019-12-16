@@ -978,6 +978,7 @@ public:
 SILValue DifferentiationTransformer::promoteToDifferentiableFunction(
     DifferentiableFunctionInst *dfi, SILBuilder &builder, SILLocation loc,
     DifferentiationInvoker invoker) {
+  auto diffFnTy = dfi->getType().castTo<SILFunctionType>();
   auto origFnOperand = dfi->getOriginalFunction();
   auto origFnTy = origFnOperand->getType().castTo<SILFunctionType>();
   auto parameterIndices = dfi->getParameterIndices();
@@ -1093,6 +1094,8 @@ SILValue DifferentiationTransformer::promoteToDifferentiableFunction(
     // - For VJPs: the thunked VJP returns a pullback that drops the unused
     //   tangent values.
     auto actualIndices = derivativeFnAndIndices->second;
+
+    /*
     // NOTE: `desiredIndices` may come from a partially-applied function and
     // have smaller capacity than `actualIndices`. We expect this logic to go
     // away when we support `@differentiable` partial apply.
@@ -1153,6 +1156,14 @@ SILValue DifferentiationTransformer::promoteToDifferentiableFunction(
             == SILFunctionTypeRepresentation::Thin) {
       derivativeFn = builder.createThinToThickFunction(
           loc, derivativeFn, SILType::getPrimitiveObjectType(expectedDerivativeFnTy));
+    }
+    */
+
+    if (actualIndices != desiredIndices) {
+      SILOptFunctionBuilder fb(transform);
+      auto *subsetThunk = getOrCreateSubsetParametersThunk(
+          fb, loc, dfi->getFunction(), diffFnTy, desiredIndices);
+      builder.createApply(loc, subsetThunk, SubstitutionMap(), <#ArrayRef<SILValue> Args#>)
     }
 
     derivativeFns.push_back(derivativeFn);

@@ -84,6 +84,19 @@ SILFunction *getOrCreateReabstractionThunk(
     SILFunction *caller, CanSILFunctionType fromType,
     CanSILFunctionType toType);
 
+/// Get or craete a parameter reordering thunk from `fromType`. The to-type is
+/// computed from the given `newOrder`, which must contain and only contain all
+/// indices of parameters of the original type.
+SILFunction *getOrCreateParameterReorderingThunk(
+    SILOptFunctionBuilder &fb, SILModule &module, SILLocation loc,
+    SILFunction *caller, CanSILFunctionType fromType,
+    ArrayRef<unsigned> newOrder);
+
+SILFunction *
+getOrCreateSubsetParametersThunk(
+    SILOptFunctionBuilder &fb, SILLocation loc, SILFunction *caller,
+    SILFunctionType *fromType, SILAutoDiffIndices desiredIndices);
+
 /// Get or create a derivative function parameter index subset thunk from
 /// `actualIndices` to `desiredIndices` for the given associated function
 /// value and original function operand. Returns a pair of the parameter

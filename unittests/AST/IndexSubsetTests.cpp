@@ -132,18 +132,28 @@ TEST(IndexSubset, Iteration) {
                                       /*indices*/ {0, 2, 4});
     // Check forward iteration.
     EXPECT_EQ(indices1->findFirst(), 0);
+    EXPECT_EQ(indices1->findFirst(false), 1);
     EXPECT_EQ(indices1->findNext(0), 2);
+    EXPECT_EQ(indices1->findNext(1, false), 3);
     EXPECT_EQ(indices1->findNext(2), 4);
+    EXPECT_EQ(indices1->findNext(3, false), (int)indices1->getCapacity());
     EXPECT_EQ(indices1->findNext(4), (int)indices1->getCapacity());
     // Check reverse iteration.
     EXPECT_EQ(indices1->findLast(), 4);
+    EXPECT_EQ(indices1->findLast(false), 3);
     EXPECT_EQ(indices1->findPrevious(4), 2);
+    EXPECT_EQ(indices1->findPrevious(3, false), 1);
     EXPECT_EQ(indices1->findPrevious(2), 0);
+    EXPECT_EQ(indices1->findPrevious(1, false), -1);
     EXPECT_EQ(indices1->findPrevious(0), -1);
     // Check range.
     unsigned indices1Elements[3] = {0, 2, 4};
     EXPECT_TRUE(std::equal(indices1->begin(), indices1->end(),
                            indices1Elements));
+    unsigned indices1UncontainedElements[3] = {1, 3};
+    EXPECT_TRUE(std::equal(indices1->uncontained_begin(),
+                           indices1->uncontained_end(),
+                           indices1UncontainedElements));
   }
   // Test 2
   {
@@ -151,16 +161,28 @@ TEST(IndexSubset, Iteration) {
                                       /*indices*/ {1, 3});
     // Check forward iteration.
     EXPECT_EQ(indices2->findFirst(), 1);
+    EXPECT_EQ(indices2->findFirst(false), 0);
+    EXPECT_EQ(indices2->findNext(0, false), 2);
     EXPECT_EQ(indices2->findNext(1), 3);
+    EXPECT_EQ(indices2->findNext(2, false), 4);
     EXPECT_EQ(indices2->findNext(3), (int)indices2->getCapacity());
+    EXPECT_EQ(indices2->findNext(4, false), (int)indices2->getCapacity());
     // Check reverse iteration.
     EXPECT_EQ(indices2->findLast(), 3);
+    EXPECT_EQ(indices2->findLast(false), 4);
+    EXPECT_EQ(indices2->findPrevious(4, false), 2);
     EXPECT_EQ(indices2->findPrevious(3), 1);
+    EXPECT_EQ(indices2->findPrevious(2, false), 0);
     EXPECT_EQ(indices2->findPrevious(1), -1);
+    EXPECT_EQ(indices2->findPrevious(0, false), -1);
     // Check range.
     unsigned indices2Elements[2] = {1, 3};
     EXPECT_TRUE(std::equal(indices2->begin(), indices2->end(),
                            indices2Elements));
+    unsigned indices2UncontainedElements[3] = {0, 2, 4};
+    EXPECT_TRUE(std::equal(indices2->uncontained_begin(),
+                           indices2->uncontained_end(),
+                           indices2UncontainedElements));
   }
 }
 

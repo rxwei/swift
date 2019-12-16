@@ -161,6 +161,14 @@ public:
     return iterator(this, (int)capacity);
   }
 
+  iterator uncontained_begin() const {
+    return iterator(this, /*containedElements*/ false);
+  }
+
+  iterator uncontained_end() const {
+    return iterator(this, (int)capacity, /*containedElements*/ false);
+  }
+
   /// Returns an iterator range of indices in the index subset.
   iterator_range<iterator> getIndices() const {
     return make_range(begin(), end());
@@ -209,10 +217,12 @@ public:
   void print(llvm::raw_ostream &s = llvm::outs()) const;
   SWIFT_DEBUG_DUMPER(dump(llvm::raw_ostream &s = llvm::errs()));
 
-  int findNext(int startIndex) const;
-  int findFirst() const { return findNext(-1); }
-  int findPrevious(int endIndex) const;
-  int findLast() const { return findPrevious(capacity); }
+  int findNext(int startIndex, bool bitValue = true) const;
+  int findFirst(bool bitValue = true) const { return findNext(-1, bitValue); }
+  int findPrevious(int endIndex, bool bitValue = true) const;
+  int findLast(bool bitValue = true) const {
+      return findPrevious(capacity, bitValue);
+  }
 
   class iterator {
   public:
@@ -225,17 +235,21 @@ public:
   private:
     const IndexSubset *parent;
     int current = 0;
+    bool containedElements;
 
     void advance() {
       assert(current != -1 && "Trying to advance past end.");
-      current = parent->findNext(current);
+      current = parent->findNext(current, containedElements);
     }
 
   public:
-    iterator(const IndexSubset *parent, int current)
-    : parent(parent), current(current) {}
-    explicit iterator(const IndexSubset *parent)
-    : iterator(parent, parent->findFirst()) {}
+    iterator(const IndexSubset *parent, int current,
+             bool containedElements = true)
+        : parent(parent), current(current), containedElements(containedElements)
+        {}
+    explicit iterator(const IndexSubset *parent, bool containedElements = true)
+        : iterator(parent, parent->findFirst(containedElements),
+                   containedElements) {}
     iterator(const iterator &) = default;
 
     iterator operator++(int) {

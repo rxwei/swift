@@ -93,7 +93,7 @@ void IndexSubset::dump(llvm::raw_ostream &s) const {
   s << "))\n";
 }
 
-int IndexSubset::findNext(int startIndex) const {
+int IndexSubset::findNext(int startIndex, bool bitValue) const {
   assert(startIndex < (int)capacity && "Start index cannot be past the end");
   unsigned bitWordIndex = 0, offset = 0;
   if (startIndex >= 0) {
@@ -105,18 +105,18 @@ int IndexSubset::findNext(int startIndex) const {
     for (; offset < numBitsPerBitWord; ++offset) {
       auto index = bitWordIndex * numBitsPerBitWord + offset;
       auto bitWord = getBitWord(bitWordIndex);
-      if (!bitWord)
+      if ((bool)bitWord == bitValue)
         break;
       if (index >= capacity)
         return capacity;
-      if (bitWord & ((BitWord)1 << offset))
+      if (bool(bitWord & ((BitWord)1 << offset)) == bitValue)
         return index;
     }
   }
   return capacity;
 }
 
-int IndexSubset::findPrevious(int endIndex) const {
+int IndexSubset::findPrevious(int endIndex, bool bitValue) const {
   assert(endIndex >= 0 && "End index cannot be before the start");
   int bitWordIndex = numBitWords - 1, offset = numBitsPerBitWord - 1;
   if (endIndex < (int)capacity) {
@@ -128,11 +128,11 @@ int IndexSubset::findPrevious(int endIndex) const {
     for (; offset < (int)numBitsPerBitWord; --offset) {
       auto index = bitWordIndex * (int)numBitsPerBitWord + offset;
       auto bitWord = getBitWord(bitWordIndex);
-      if (!bitWord)
+      if (!bitWord == bitValue)
         break;
       if (index < 0)
         return -1;
-      if (bitWord & ((BitWord)1 << offset))
+      if (bool(bitWord & ((BitWord)1 << offset)) == bitValue)
         return index;
     }
   }
