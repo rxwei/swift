@@ -256,14 +256,13 @@ static CanGenericSignature getAutoDiffDerivativeFunctionGenericSignature(
 }
 
 CanSILFunctionType SILFunctionType::getAutoDiffDerivativeFunctionType(
-    IndexSubset *parameterIndices, unsigned resultIndex,
-    AutoDiffDerivativeFunctionKind kind, TypeConverter &TC,
-    LookupConformanceFn lookupConformance,
+    IndexSubset *parameterIndices, AutoDiffDerivativeFunctionKind kind,
+    TypeConverter &TC, LookupConformanceFn lookupConformance,
     CanGenericSignature derivativeFnGenSig, bool isReabstractionThunk) {
   auto &ctx = getASTContext();
   SILAutoDiffDerivativeFunctionKey key{
     this, parameterIndices,
-    IndexSubset::get(ctx, getNumResults(), {resultIndex}),
+    IndexSubset::get(ctx, getNumResults(), {0}),
     kind, derivativeFnGenSig, isReabstractionThunk
   };
   auto insertion =
@@ -360,7 +359,7 @@ CanSILFunctionType SILFunctionType::getAutoDiffDerivativeFunctionType(
           {paramTan->getCanonicalType(), param.getConvention()});
     }
     SmallVector<SILResultInfo, 8> differentialResults;
-    auto &result = getResults()[resultIndex];
+    auto &result = getResults()[0];
     auto resultTan =
         result.getInterfaceType()->getAutoDiffTangentSpace(
             lookupConformance);
@@ -376,7 +375,7 @@ CanSILFunctionType SILFunctionType::getAutoDiffDerivativeFunctionType(
   }
   case AutoDiffDerivativeFunctionKind::VJP: {
     SmallVector<SILParameterInfo, 8> pullbackParams;
-    auto &origRes = getResults()[resultIndex];
+    auto &origRes = getResults()[0];
     auto resultTan =
         origRes.getInterfaceType()->getAutoDiffTangentSpace(
             lookupConformance);
@@ -2751,8 +2750,8 @@ TypeConverter::getConstantInfo(TypeExpansionContext expansion,
     auto loweredIndices = autodiff::getLoweredParameterIndices(
         autoDiffFuncId->getParameterIndices(), formalInterfaceType);
     silFnType = origFnConstantInfo.SILFnType->getAutoDiffDerivativeFunctionType(
-        loweredIndices, /*resultIndex*/ 0, autoDiffFuncId->getKind(),
-        *this, LookUpConformanceInModule(&M));
+        loweredIndices, autoDiffFuncId->getKind(), *this,
+        LookUpConformanceInModule(&M));
   }
 
   LLVM_DEBUG(llvm::dbgs() << "lowering type for constant ";
