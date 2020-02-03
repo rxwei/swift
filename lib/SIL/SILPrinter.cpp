@@ -1216,6 +1216,10 @@ public:
     for (auto i : dfi->getParameterIndices()->getIndices())
       *this << ' ' << i;
     *this << "] ";
+    *this << "[results";
+    for (auto i : dfi->getResultIndices()->getIndices())
+      *this << ' ' << i;
+    *this << "] ";
     *this << getIDAndType(dfi->getOriginalFunction());
     if (dfi->hasDerivativeFunctions()) {
       *this << " with_derivative ";
