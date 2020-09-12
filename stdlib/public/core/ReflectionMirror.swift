@@ -295,3 +295,44 @@ public func _forEachField(
 
   return true
 }
+
+/// Calls the given closure on every field of the specified type.
+///
+/// If `body` returns `false` for any field, no additional fields are visited.
+///
+/// - Parameters:
+///   - type: The type to inspect.
+///   - options: Options to use when reflecting over `type`.
+///   - body: A closure to call with information about each field in `type`.
+///     The parameters to `body` are a pointer to a C string holding the name
+///     of the field, the offset of the field in bytes, the type of the field,
+///     and the `_MetadataKind` of the field's type.
+/// - Returns: `true` if every invocation of `body` returns `true`; otherwise,
+///   `false`.
+@available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
+@discardableResult
+@_spi(Reflection)
+public func _forKeyPathToEachField(
+  of type: Any.Type,
+  options: _EachFieldOptions = [],
+  body: (UnsafePointer<CChar>, AnyKeyPath) -> Bool
+) -> Bool {
+  return _forEachField(of: type, options: options) {
+    nameC, offset, childType, kind in
+    
+    // Get key path type.
+    let keyPathType: AnyKeyPath.Type
+    func openRoot<Root>(_: Root.Type) -> AnyKeyPath.Type {
+      func openLeaf<Leaf>(_: Leaf.Type) -> AnyKeyPath.Type {
+        switch kind {
+        case .class:
+          return ReferenceWritableKeyPath<Root, Leaf>.self
+        default:
+          return ...
+        }
+      }
+      _openExistential(childType, do: openLeaf)
+    }
+    _openExistential(type, do: openRoot)
+  }
+}
