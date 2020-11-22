@@ -1,4 +1,6 @@
 // RUN: %target-swift-frontend -c -enable-library-evolution %s
+// RUN: %target-swift-frontend -c -g -enable-library-evolution %s
+// RUN: %target-swift-frontend -c -O -g -enable-library-evolution %s
 // REQUIRES: asserts
 
 // SR-13865: AutoDiff crasher on property derivatives in library evolution mode.

@@ -104,10 +104,23 @@ std::string LinkEntity::mangleAsString() const {
     return mangler.mangleDispatchThunk(func);
   }
 
+  case Kind::DispatchThunkDerivativeFunction: {
+    auto *func = cast<FuncDecl>(getDecl());
+    auto *derivativeId = getAutoDiffDerivativeFunctionIdentifier();
+    return mangler.mangleDispatchThunkForDerivativeFunction(func, derivativeId);
+  }
+
   case Kind::DispatchThunkInitializer: {
     auto *ctor = cast<ConstructorDecl>(getDecl());
     return mangler.mangleConstructorDispatchThunk(ctor,
                                                   /*isAllocating=*/false);
+  }
+
+  case Kind::DispatchThunkInitializerDerivativeFunction: {
+    auto *ctor = cast<ConstructorDecl>(getDecl());
+    auto *derivativeId = getAutoDiffDerivativeFunctionIdentifier();
+    return mangler.mangleConstructorDispatchThunkForDerivativeFunction(
+        ctor, /*isAllocating=*/false, derivativeId);
   }
 
   case Kind::DispatchThunkAllocator: {
@@ -454,7 +467,9 @@ SILLinkage LinkEntity::getLinkage(ForDefinition_t forDefinition) const {
 
   switch (getKind()) {
   case Kind::DispatchThunk:
+  case Kind::DispatchThunkDerivativeFunction:
   case Kind::DispatchThunkInitializer:
+  case Kind::DispatchThunkInitializerDerivativeFunction:
   case Kind::DispatchThunkAllocator:
   case Kind::MethodDescriptor:
   case Kind::MethodDescriptorInitializer:
@@ -731,7 +746,9 @@ bool LinkEntity::isContextDescriptor() const {
   case Kind::AsyncFunctionPointerAST:
   case Kind::PropertyDescriptor:
   case Kind::DispatchThunk:
+  case Kind::DispatchThunkDerivativeFunction:
   case Kind::DispatchThunkInitializer:
+  case Kind::DispatchThunkInitializerDerivativeFunction:
   case Kind::DispatchThunkAllocator:
   case Kind::MethodDescriptor:
   case Kind::MethodDescriptorInitializer:
@@ -1000,7 +1017,9 @@ bool LinkEntity::isWeakImported(ModuleDecl *module) const {
 
   case Kind::AsyncFunctionPointerAST:
   case Kind::DispatchThunk:
+  case Kind::DispatchThunkDerivativeFunction:
   case Kind::DispatchThunkInitializer:
+  case Kind::DispatchThunkInitializerDerivativeFunction:
   case Kind::DispatchThunkAllocator:
   case Kind::MethodDescriptor:
   case Kind::MethodDescriptorInitializer:
@@ -1077,7 +1096,9 @@ DeclContext *LinkEntity::getDeclContextForEmission() const {
   switch (getKind()) {
   case Kind::AsyncFunctionPointerAST:
   case Kind::DispatchThunk:
+  case Kind::DispatchThunkDerivativeFunction:
   case Kind::DispatchThunkInitializer:
+  case Kind::DispatchThunkInitializerDerivativeFunction:
   case Kind::DispatchThunkAllocator:
   case Kind::MethodDescriptor:
   case Kind::MethodDescriptorInitializer:

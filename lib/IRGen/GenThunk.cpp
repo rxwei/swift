@@ -44,6 +44,7 @@ using namespace irgen;
 llvm::Function *
 IRGenModule::getAddrOfDispatchThunk(SILDeclRef declRef,
                                     ForDefinition_t forDefinition) {
+  llvm::outs() << "**** getAddrOfDispatchThunk: " << declRef << '\n';
   LinkEntity entity = LinkEntity::forDispatchThunk(declRef);
 
   llvm::Function *&entry = GlobalFuncs[entity];
@@ -58,6 +59,9 @@ IRGenModule::getAddrOfDispatchThunk(SILDeclRef declRef,
   LinkInfo link = LinkInfo::get(*this, entity, forDefinition);
 
   entry = createFunction(*this, link, signature);
+  llvm::outs() << "**** getAddrOfDispatchThunk: " << declRef << '\n';
+  llvm::outs() << "**** ... forDefinition: " << (forDefinition == ForDefinition ? "YES" : "NO") << '\n';
+  llvm::outs() << "**** ............ llvm function name : " << entry->getName() << '\n';
   return entry;
 }
 
@@ -138,6 +142,10 @@ static FunctionPointer lookupMethod(IRGenFunction &IGF, SILDeclRef declRef) {
 }
 
 void IRGenModule::emitDispatchThunk(SILDeclRef declRef) {
+
+    llvm::outs() << "**** emitDispatchThunk: " << declRef << '\n';
+    llvm::outs() << "**** .................: "; declRef.getDecl()->dump(); llvm::outs() << '\n';
+
   auto *f = getAddrOfDispatchThunk(declRef, ForDefinition);
   if (!f->isDeclaration()) {
     return;

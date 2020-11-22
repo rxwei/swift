@@ -563,6 +563,7 @@ private:
     case Node::Kind::GlobalVariableOnceFunction:
     case Node::Kind::GlobalVariableOnceToken:
     case Node::Kind::CanonicalPrespecializedGenericTypeCachingOnceToken:
+    case Node::Kind::AutoDiffDerivativeFunctionIdentifier:
       return false;
     }
     printer_unreachable("bad node kind");
@@ -2549,6 +2550,9 @@ NodePointer NodePrinter::print(NodePointer Node, bool asPrefixContext) {
                "metadata for ";
     print(Node->getChild(0));
     return nullptr;
+  case Node::Kind::AutoDiffDerivativeFunctionIdentifier:
+    Printer << "derivative function for ";
+    
   }
   printer_unreachable("bad node kind!");
 }

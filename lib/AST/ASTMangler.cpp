@@ -3163,3 +3163,21 @@ std::string ASTMangler::mangleOpaqueTypeDescriptor(const OpaqueTypeDecl *decl) {
   appendOperator("MQ");
   return finalize();
 }
+
+void ASTMangler::appendAutoDiffDerivativeFunctionIdentifier(
+    const AutoDiffDerivativeFunctionIdentifier *derivativeId) {
+  switch (derivativeId->getKind()) {
+  case AutoDiffDerivativeFunctionKind::JVP:
+    appendOperator("d");
+  case AutoDiffDerivativeFunctionKind::VJP:
+    appendOperator("p");
+  }
+  appendOperatorParam(derivativeId->getParameterIndices()->getString());
+  auto genSig = derivativeId->getDerivativeGenericSignature();
+  if (!genSig) {
+    appendOperator("x");
+    appendGenericSignature(genSig);
+  } else {
+    appendOperator("X");
+  }
+}

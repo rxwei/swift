@@ -420,6 +420,9 @@ void TBDGenVisitor::addSymbol(LinkEntity entity) {
   auto linkage =
       LinkInfo::get(UniversalLinkInfo, SwiftModule, entity, ForDefinition);
 
+    llvm::outs() << "**** addSymbol: ";
+    llvm::outs() << "**** .........: " << linkage.getName() << '\n';
+
   auto externallyVisible =
       llvm::GlobalValue::isExternalLinkage(linkage.getLinkage()) &&
       linkage.getVisibility() != llvm::GlobalValue::HiddenVisibility;

@@ -304,6 +304,7 @@ NODE(GlobalVariableOnceFunction)
 NODE(GlobalVariableOnceToken)
 NODE(GlobalVariableOnceDeclList)
 NODE(CanonicalPrespecializedGenericTypeCachingOnceToken)
+NODE(AutoDiffDerivativeFunctionIdentifier)
 
 #undef CONTEXT_NODE
 #undef NODE

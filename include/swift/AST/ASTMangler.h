@@ -415,6 +415,9 @@ protected:
   void appendSymbolicReference(SymbolicReferent referent);
   
   void appendOpaqueDeclName(const OpaqueTypeDecl *opaqueDecl);
+
+  void appendAutoDiffDerivativeFunctionIdentifier(
+      const AutoDiffDerivativeFunctionIdentifier *derivativeId);
 };
 
 } // end namespace Mangle

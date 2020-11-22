@@ -126,9 +126,19 @@ class LinkEntity {
     /// or a class.
     DispatchThunk,
 
+    /// A method dispatch thunk for a derivative function.  The pointer is a FuncDecl*
+    /// inside a protocol or a class, and the second pointer is an
+    /// AutoDiffDerivativeFunctionIdentifier*.
+    DispatchThunkDerivativeFunction,
+
     /// A method dispatch thunk for an initializing constructor.  The pointer
     /// is a ConstructorDecl* inside a class.
     DispatchThunkInitializer,
+
+    /// A method dispatch thunk for an initializing constructor's derivative function.
+    /// The pointer is a ConstructorDecl* inside a class, and the second pointer is
+    /// an AutoDiffDerivativeFunctionIdentfier*.
+    DispatchThunkInitializerDerivativeFunction,
 
     /// A method dispatch thunk for an allocating constructor.  The pointer is a
     /// ConstructorDecl* inside a protocol or a class.
@@ -446,10 +456,11 @@ class LinkEntity {
             k <= Kind::ProtocolWitnessTableLazyCacheVariable);
   }
 
-  void setForDecl(Kind kind, const ValueDecl *decl) {
+  void setForDecl(Kind kind, const ValueDecl *decl,
+                  void *secondaryPointer = nullptr) {
     assert(isDeclKind(kind));
     Pointer = const_cast<void*>(static_cast<const void*>(decl));
-    SecondaryPointer = nullptr;
+    SecondaryPointer = secondaryPointer;
     Data = LINKENTITY_SET_FIELD(Kind, unsigned(kind));
   }
 
@@ -601,16 +612,23 @@ class LinkEntity {
   }
 
 public:
-  static LinkEntity forDispatchThunk(SILDeclRef declRef) {
+  static LinkEntity
+  forDispatchThunk(SILDeclRef declRef) {
     assert(isValidResilientMethodRef(declRef));
 
+    auto *derivativeId = declRef.isAutoDiffDerivativeFunction()
+                             ? declRef.getAutoDiffDerivativeFunctionIdentifier()
+                             : nullptr;
     LinkEntity::Kind kind;
     switch (declRef.kind) {
     case SILDeclRef::Kind::Func:
-      kind = Kind::DispatchThunk;
+      kind = derivativeId == nullptr ? Kind::DispatchThunk
+                                     : Kind::DispatchThunkDerivativeFunction;
       break;
     case SILDeclRef::Kind::Initializer:
-      kind = Kind::DispatchThunkInitializer;
+      kind = derivativeId == nullptr
+                 ? Kind::DispatchThunkInitializer
+                 : Kind::DispatchThunkInitializerDerivativeFunction;
       break;
     case SILDeclRef::Kind::Allocator:
       kind = Kind::DispatchThunkAllocator;
@@ -620,7 +638,7 @@ public:
     }
 
     LinkEntity entity;
-    entity.setForDecl(kind, declRef.getDecl());
+    entity.setForDecl(kind, declRef.getDecl(), static_cast<void *>(derivativeId));
     return entity;
   }
 
@@ -887,7 +905,7 @@ public:
                                           witness);
     return entity;
   }
-
+  
   static LinkEntity forProtocolWitnessTable(const RootProtocolConformance *C) {
     LinkEntity entity;
     entity.setForProtocolConformance(Kind::ProtocolWitnessTable, C);
@@ -1191,6 +1209,15 @@ public:
     assert(getKind() == Kind::AssociatedTypeWitnessTableAccessFunction);
     return reinterpret_cast<ProtocolDecl*>(Pointer);
   }
+
+  AutoDiffDerivativeFunctionIdentifier *
+  getAutoDiffDerivativeFunctionIdentifier() const {
+    assert(getKind() == Kind::DispatchThunkDerivativeFunction ||
+           getKind() == Kind::DispatchThunkInitializerDerivativeFunction);
+    return reinterpret_cast<AutoDiffDerivativeFunctionIdentifier *>(
+        SecondaryPointer);
+  }
+
   bool isDynamicallyReplaceable() const {
     assert(getKind() == Kind::SILFunction);
     return LINKENTITY_GET_FIELD(Data, IsDynamicallyReplaceableImpl);

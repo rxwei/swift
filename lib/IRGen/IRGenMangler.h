@@ -51,10 +51,29 @@ public:
     return finalize();
   }
 
+  std::string mangleDispatchThunkForDerivativeFunction(
+      const FuncDecl *func, AutoDiffDerivativeFunctionIdentifier *derivativeId) {
+    beginMangling();
+    appendEntity(func);
+    appendAutoDiffDerivativeFunctionIdentifier(derivativeId);
+    appendOperator("Tj");
+    return finalize();
+  }
+
   std::string mangleConstructorDispatchThunk(const ConstructorDecl *ctor,
                                              bool isAllocating) {
     beginMangling();
     appendConstructorEntity(ctor, isAllocating);
+    appendOperator("Tj");
+    return finalize();
+  }
+
+  std::string mangleConstructorDispatchThunkForDerivativeFunction(
+      const ConstructorDecl *ctor, bool isAllocating, 
+      AutoDiffDerivativeFunctionIdentifier *derivativeId) {
+    beginMangling();
+    appendConstructorEntity(ctor, isAllocating);
+    appendAutoDiffDerivativeFunctionIdentifier(derivativeId);
     appendOperator("Tj");
     return finalize();
   }
