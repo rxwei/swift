@@ -141,6 +141,11 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::COWBufferForReading:
     case BuiltinValueKind::IntInstrprofIncrement:
     case BuiltinValueKind::GetCurrentAsyncTask:
+    case BuiltinValueKind::AutoDiffTapeManagerCreate:
+    case BuiltinValueKind::AutoDiffTapeManagerDestroy:
+    case BuiltinValueKind::AutoDiffTapeCreate:
+    case BuiltinValueKind::AutoDiffTapeAllocate:
+    case BuiltinValueKind::AutoDiffTapePop:
       return false;
 
     // Handle some rare builtins that may be sensitive to object lifetime

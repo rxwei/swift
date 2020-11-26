@@ -152,3 +152,27 @@ func linearFunction_f_direct_arity1() -> @differentiable(linear) (Float) -> Floa
 // CHECK:   [[THICK_ORIG2:%.*]] = thin_to_thick_function [[ORIG2]] : $@convention(thin) (Float) -> Float to $@callee_guaranteed (Float) -> Float
 // CHECK:   [[LINEAR:%.*]] = linear_function [parameters 0] [[THICK_ORIG1]] : $@callee_guaranteed (Float) -> Float with_transpose [[THICK_ORIG2]] : $@callee_guaranteed (Float) -> Float
 // CHECK:   return [[LINEAR]] : $@differentiable(linear) @callee_guaranteed (Float) -> Float
+
+struct ExamplePullbackStruct<T: Differentiable> {
+  var pb0: (T.TangentVector) -> T.TangentVector
+}
+
+@_silgen_name("test_tape_builtins")
+func test_tape_builtins() {
+  let tapeManager = Builtin.autoDiffTapeManagerCreate()
+  let pbStruct = ExamplePullbackStruct<Float>(pb0: { $0 })
+  let tapeID = Builtin.autoDiffTapeCreate(tapeManager, type(of: pbStruct))
+  let buffer = UnsafeMutableRawPointer(Builtin.autoDiffTapeAllocate(tapeManager, tapeID))
+  buffer.storeBytes(of: pbStruct, as: type(of: pbStruct))
+  let poppedBuffer = Builtin.autoDiffTapePop(tapeManager, tapeID)
+  let _ = UnsafeMutableRawPointer(poppedBuffer).load(as: type(of: pbStruct))
+  Builtin.autoDiffTapeManagerDestroy(tapeManager)
+}
+
+// CHECK-LABEL: sil{{.*}}@test_tape_builtins
+// CHECK: bb0:
+// CHECK:   [[TAPE_MGR:%.*]] = builtin "autoDiffTapeManagerCreate"() : $Builtin.RawPointer
+// CHECK:   [[TAPE_ID:%.*]] = builtin "autoDiffTapeCreate"<ExamplePullbackStruct<Float>>([[TAPE_MGR]] : $Builtin.RawPointer, {{.*}} : $@thin ExamplePullbackStruct<Float>.Type) : $Builtin.Word
+// CHECK:   [[BUF:%.*]] = builtin "autoDiffTapeAllocate"([[TAPE_MGR]] : $Builtin.RawPointer, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
+// CHECK:   [[BUF_POPPED:%.*]] = builtin "autoDiffTapePop"([[TAPE_MGR]] : $Builtin.RawPointer, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
+// CHECK:   builtin "autoDiffTapeManagerDestroy"(%0 : $Builtin.RawPointer) : $()

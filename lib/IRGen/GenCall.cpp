@@ -4581,3 +4581,50 @@ void irgen::emitAsyncReturn(IRGenFunction &IGF, AsyncContextLayout &asyncLayout,
   auto call = IGF.Builder.CreateCall(fnPtr, Args);
   call->setTailCall();
 }
+
+Address irgen::emitAutoDiffTapeManagerCreate(IRGenFunction &IGF) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffTapeManagerCreateFn(), {});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return Address(call, IGF.IGM.getPointerAlignment());
+}
+
+void irgen::emitAutoDiffTapeManagerDestroy(IRGenFunction &IGF,
+                                           Address tapeManager) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffTapeManagerDestroyFn(), {tapeManager.getAddress()});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+}
+
+llvm::Value *irgen::emitAutoDiffTapeCreate(IRGenFunction &IGF,
+                                           Address tapeManager,
+                                           Address typeMetadata) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffTapeCreateFn(),
+      {tapeManager.getAddress(), typeMetadata.getAddress()});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return call;
+}
+
+Address irgen::emitAutoDiffTapeAllocate(IRGenFunction &IGF,
+                                        Address tapeManager,
+                                        llvm::Value *tapeID) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffTapeAllocateFn(), {tapeManager.getAddress(), tapeID});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return Address(call, IGF.IGM.getPointerAlignment());
+}
+
+Address irgen::emitAutoDiffTapePop(IRGenFunction &IGF,
+                                   Address tapeManager,
+                                   llvm::Value *tapeID) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffTapePopFn(), {tapeManager.getAddress(), tapeID});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return Address(call, IGF.IGM.getPointerAlignment());
+}

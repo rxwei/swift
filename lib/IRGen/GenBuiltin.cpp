@@ -1115,5 +1115,40 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     return;
   }
 
+  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeManagerCreate) {
+    out.add(emitAutoDiffTapeManagerCreate(IGF).getAddress());
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeManagerDestroy) {
+    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    emitAutoDiffTapeManagerDestroy(IGF, tapeMgr);
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeCreate) {
+    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    auto loweredType = getLoweredTypeAndTypeInfo(
+        IGF.IGM, substitutions.getReplacementTypes()[0]).first;
+    auto *typeMetadata = IGF.emitTypeMetadataRefForLayout(loweredType);
+    Address typeMetadataAddr(typeMetadata, IGF.IGM.getTypeMetadataAlignment());
+    out.add(emitAutoDiffTapeCreate(IGF, tapeMgr, typeMetadataAddr));
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeAllocate) {
+    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    auto *tapeID = args.claimNext();
+    out.add(emitAutoDiffTapeAllocate(IGF, tapeMgr, tapeID).getAddress());
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffTapePop) {
+    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    auto *tapeID = args.claimNext();
+    out.add(emitAutoDiffTapePop(IGF, tapeMgr, tapeID).getAddress());
+    return;
+  }
+
   llvm_unreachable("IRGen unimplemented for this builtin!");
 }

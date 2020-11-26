@@ -614,6 +614,9 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
 
   DifferentiabilityWitnessTy = createStructType(
       *this, "swift.differentiability_witness", {Int8PtrTy, Int8PtrTy});
+  AutoDiffTapeManagerPtrTy = createStructType(
+      *this, "swift.autodiff_tape_mgr", {Int8PtrTy, Int8PtrTy})
+          ->getPointerTo(DefaultAS);
 }
 
 IRGenModule::~IRGenModule() {
@@ -718,6 +721,14 @@ namespace RuntimeConstants {
 
   RuntimeAvailability ConcurrencyAvailability(ASTContext &context) {
     auto featureAvailability = context.getConcurrencyAvailability();
+    if (!isDeploymentAvailabilityContainedIn(context, featureAvailability)) {
+      return RuntimeAvailability::ConditionallyAvailable;
+    }
+    return RuntimeAvailability::AlwaysAvailable;
+  }
+
+  RuntimeAvailability DifferentiationAvailability(ASTContext &context) {
+    auto featureAvailability = context.getDifferentiationAvailability();
     if (!isDeploymentAvailabilityContainedIn(context, featureAvailability)) {
       return RuntimeAvailability::ConditionallyAvailable;
     }

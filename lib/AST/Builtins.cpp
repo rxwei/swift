@@ -1383,6 +1383,37 @@ static ValueDecl *getCreateAsyncTaskFuture(ASTContext &ctx, Identifier id) {
   return builder.build(id);
 }
 
+static ValueDecl *getAutoDiffTapeManagerCreate(ASTContext &ctx, Identifier id) {
+  return getBuiltinFunction(id, {}, ctx.TheRawPointerType);
+}
+
+static ValueDecl *getAutoDiffTapeManagerDestroy(ASTContext &ctx,
+                                                Identifier id) {
+  return getBuiltinFunction(id, {ctx.TheRawPointerType}, ctx.TheEmptyTupleType);
+}
+
+static ValueDecl *getAutoDiffTapeCreate(ASTContext &ctx, Identifier id) {
+  BuiltinFunctionBuilder builder(ctx);
+  builder.addParameter(makeConcrete(ctx.TheRawPointerType));
+  builder.addParameter(makeMetatype(makeGenericParam(0)));
+  builder.setResult(makeConcrete(BuiltinIntegerType::getWordType(ctx)));
+  return builder.build(id);
+}
+
+static ValueDecl *getAutoDiffTapeAllocate(ASTContext &ctx, Identifier id) {
+  return getBuiltinFunction(
+      id,
+      {ctx.TheRawPointerType, BuiltinIntegerType::getWordType(ctx)},
+      ctx.TheRawPointerType);
+}
+
+static ValueDecl *getAutoDiffTapePop(ASTContext &ctx, Identifier id) {
+  return getBuiltinFunction(
+      id,
+      {ctx.TheRawPointerType, BuiltinIntegerType::getWordType(ctx)},
+      ctx.TheRawPointerType);
+}
+
 static ValueDecl *getPoundAssert(ASTContext &Context, Identifier Id) {
   auto int1Type = BuiltinIntegerType::get(1, Context);
   auto optionalRawPointerType = BoundGenericEnumType::get(
@@ -2549,6 +2580,21 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
 
   case BuiltinValueKind::TriggerFallbackDiagnostic:
     return getTriggerFallbackDiagnosticOperation(Context, Id);
+
+  case BuiltinValueKind::AutoDiffTapeManagerCreate:
+    return getAutoDiffTapeManagerCreate(Context, Id);
+
+  case BuiltinValueKind::AutoDiffTapeManagerDestroy:
+    return getAutoDiffTapeManagerDestroy(Context, Id);
+
+  case BuiltinValueKind::AutoDiffTapeCreate:
+    return getAutoDiffTapeCreate(Context, Id);
+
+  case BuiltinValueKind::AutoDiffTapeAllocate:
+    return getAutoDiffTapeAllocate(Context, Id);
+
+  case BuiltinValueKind::AutoDiffTapePop:
+    return getAutoDiffTapePop(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

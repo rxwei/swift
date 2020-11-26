@@ -1518,6 +1518,47 @@ FUNCTION(TaskCreateFutureFunc,
               TaskContinuationFunctionPtrTy, SizeTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
+// AutoDiffTapeManager *swift_autodiff_tape_manager_create();
+FUNCTION(AutoDiffTapeManagerCreate,
+         swift_autodiff_tape_manager_create, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(AutoDiffTapeManagerPtrTy),
+         ARGS(),
+         ATTRS(NoUnwind, ArgMemOnly))
+
+// void swift_autodiff_tape_manager_destroy(AutoDiffTapeManager *);
+FUNCTION(AutoDiffTapeManagerDestroy,
+         swift_autodiff_tape_manager_destroy, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(VoidTy),
+         ARGS(AutoDiffTapeManagerPtrTy),
+         ATTRS(NoUnwind, ArgMemOnly))
+
+// size_t swift_autodiff_tape_create(AutoDiffTapeManager *,
+//                                   const Metadata *elementType);
+FUNCTION(AutoDiffTapeCreate,
+         swift_autodiff_tape_create, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(SizeTy),
+         ARGS(AutoDiffTapeManagerPtrTy, TypeMetadataPtrTy),
+         ATTRS(NoUnwind, ArgMemOnly))
+
+// void *swift_autodiff_tape_allocate(AutoDiffTapeManager *, size_t tapeIndex);
+FUNCTION(AutoDiffTapeAllocate,
+         swift_autodiff_tape_allocate, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(Int8PtrTy),
+         ARGS(AutoDiffTapeManagerPtrTy, SizeTy),
+         ATTRS(NoUnwind, ArgMemOnly))
+
+// void *swift_autodiff_tape_pop(AutoDiffTapeManager *, size_t tapeIndex);
+FUNCTION(AutoDiffTapePop,
+         swift_autodiff_tape_pop, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(Int8PtrTy),
+         ARGS(AutoDiffTapeManagerPtrTy, SizeTy),
+         ATTRS(NoUnwind, ArgMemOnly))
+
 #undef RETURNS
 #undef ARGS
 #undef ATTRS

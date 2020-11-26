@@ -1469,6 +1469,76 @@ static ManagedValue emitBuiltinCreateAsyncTaskFuture(
   return SGF.emitManagedRValueWithCleanup(apply);
 }
 
+static ManagedValue emitBuiltinAutoDiffTapeManagerCreate(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffTapeManagerCreate)),
+      SILType::getRawPointerType(ctx),
+      subs,
+      /*args*/ {});
+  return ManagedValue::forUnmanaged(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffTapeManagerDestroy(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffTapeManagerDestroy)),
+      SGF.getLoweredLoadableType(ctx.TheEmptyTupleType),
+      subs,
+      /*args*/ {args[0].getValue()});
+  return ManagedValue::forUnmanaged(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffTapeCreate(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffTapeCreate)),
+      SILType::getBuiltinWordType(ctx),
+      subs,
+      /*args*/ {args[0].getValue(), args[1].getValue()});
+  return ManagedValue::forUnmanaged(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffTapeAllocate(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffTapeAllocate)),
+      SILType::getRawPointerType(ctx),
+      SubstitutionMap(),
+      /*args*/ {args[0].getValue(), args[1].getValue()});
+  return ManagedValue::forUnmanaged(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffTapePop(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffTapePop)),
+      SILType::getRawPointerType(ctx),
+      SubstitutionMap(),
+      /*args*/ {args[0].getValue(), args[1].getValue()});
+  return ManagedValue::forUnmanaged(builtinApply);
+}
+
 Optional<SpecializedEmitter>
 SpecializedEmitter::forDecl(SILGenModule &SGM, SILDeclRef function) {
   // Only consider standalone declarations in the Builtin module.

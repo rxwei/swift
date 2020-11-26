@@ -864,6 +864,11 @@ ANY_OWNERSHIP_BUILTIN(PoundAssert)
 ANY_OWNERSHIP_BUILTIN(GlobalStringTablePointer)
 ANY_OWNERSHIP_BUILTIN(TypePtrAuthDiscriminator)
 ANY_OWNERSHIP_BUILTIN(IntInstrprofIncrement)
+ANY_OWNERSHIP_BUILTIN(AutoDiffTapeManagerCreate)
+ANY_OWNERSHIP_BUILTIN(AutoDiffTapeManagerDestroy)
+ANY_OWNERSHIP_BUILTIN(AutoDiffTapeCreate)
+ANY_OWNERSHIP_BUILTIN(AutoDiffTapeAllocate)
+ANY_OWNERSHIP_BUILTIN(AutoDiffTapePop)
 #undef ANY_OWNERSHIP_BUILTIN
 
 // This is correct today since we do not have any builtins which return
