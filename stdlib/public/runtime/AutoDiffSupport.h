@@ -14,7 +14,6 @@
 #define SWIFT_RUNTIME_AUTODIFF_SUPPORT_H
 
 #include "swift/ABI/Metadata.h"
-#include "swift/ABI/MetadataValues.h"
 #include "swift/Runtime/Config.h"
 #include "llvm/Support/Allocator.h"
 

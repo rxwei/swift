@@ -57,13 +57,13 @@ void *AutoDiffTapeManager::pop(size_t tapeID) {
 
 AutoDiffTapeManager *swift::swift_autodiff_tape_manager_create() {
   auto *buffer = (AutoDiffTapeManager *)swift_slowAlloc(
-      sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager));
+      sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
   return new (buffer) AutoDiffTapeManager;
 }
 
 void swift::swift_autodiff_tape_manager_destroy(AutoDiffTapeManager *manager) {
   swift_slowDealloc(
-      manager, sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager));
+      manager, sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
 }
 
 size_t swift::swift_autodiff_tape_create(AutoDiffTapeManager *manager,

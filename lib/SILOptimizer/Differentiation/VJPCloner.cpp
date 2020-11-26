@@ -25,8 +25,10 @@
 #include "swift/SILOptimizer/Differentiation/PullbackCloner.h"
 #include "swift/SILOptimizer/Differentiation/Thunk.h"
 
+#include "swift/SIL/LoopInfo.h"
 #include "swift/SIL/TerminatorUtils.h"
 #include "swift/SIL/TypeSubstCloner.h"
+#include "swift/SILOptimizer/Analysis/LoopAnalysis.h"
 #include "swift/SILOptimizer/PassManager/PrettyStackTrace.h"
 #include "swift/SILOptimizer/Utils/CFGOptUtils.h"
 #include "swift/SILOptimizer/Utils/SILOptFunctionBuilder.h"
@@ -64,6 +66,9 @@ class VJPCloner::Implementation final
   /// Info from activity analysis on the original function.
   const DifferentiableActivityInfo &activityInfo;
 
+  /// The loop info.
+  SILLoopInfo *loopInfo;
+
   /// The linear map info.
   LinearMapInfo pullbackInfo;
 
@@ -71,11 +76,17 @@ class VJPCloner::Implementation final
   /// predecessor enum argument).
   SmallPtrSet<SILBasicBlock *, 4> remappedBasicBlocks;
 
+  /// The tape manager value. If null, no tape manager is needed (no loops).
+  SILValue tapeManager;
+
   bool errorOccurred = false;
 
   /// Mapping from original blocks to pullback values. Used to build pullback
   /// struct instances.
   llvm::DenseMap<SILBasicBlock *, SmallVector<SILValue, 8>> pullbackValues;
+
+  /// Mapping from basic blocks to tape IDs.
+  llvm::DenseMap<SILBasicBlock *, unsigned> tapeIDs;
 
   ASTContext &getASTContext() const { return vjp->getASTContext(); }
   SILModule &getModule() const { return vjp->getModule(); }
@@ -92,6 +103,40 @@ class VJPCloner::Implementation final
 
   /// Run VJP generation. Returns true on error.
   bool run();
+
+  /// Initializes tape manager if needed.
+  void initializeTapeManagerIfNeeded() {
+    if (pullbackInfo.getBlocksInLoop().empty())
+      return;
+    Builder.setInsertionPoint(vjp->getEntryBlock());
+    tapeManager = Builder.createBuiltin(
+        original->getLocation(),
+        getASTContext().getIdentifier("autoDiffTapeManagerCreate"),
+        SILType::getRawPointerType(getASTContext()), SubstitutionMap(), {});
+
+    auto createTapeId = getASTContext().getIdentifier("autoDiffTapeCreate");
+    SmallVector<ValueDecl *, 1> createTapeLookupResults;
+    getASTContext().TheBuiltinModule->lookupQualified(
+        getASTContext().TheBuiltinModule, DeclNameRef(createTapeId),
+        NLOptions::NL_IgnoreAccessControl, createTapeLookupResults);
+    assert(createTapeLookupResults.size() == 1);
+    auto *createTapeDecl = cast<FuncDecl>(createTapeLookupResults.front());
+
+    for (auto entry : enumerate(pullbackInfo.getBlocksInLoop())) {
+      auto *bb = entry.value();
+      tapeIDs[bb] = entry.index();
+      auto pbStructType = pullbackInfo.getLinearMapStructLoweredType(bb);
+      auto subMap = SubstitutionMap::get(
+          createTapeDecl->getGenericSignature(),
+          ArrayRef<Type>{pbStructType.getASTType()}, {});
+      Builder.createBuiltin(
+          original->getLocation(),
+          getASTContext().getIdentifier("autoDiffTapeCreate"),
+          SILType::getRawPointerType(getASTContext()), subMap, {});
+    }
+    LLVM_DEBUG(getADDebugStream() << "Initialized tape manager\n"
+               << *vjp->getEntryBlock() << '\n');
+  }
 
   /// Get the lowered SIL type of the given AST type.
   SILType getLoweredType(Type type) {
@@ -700,8 +745,10 @@ VJPCloner::Implementation::Implementation(VJPCloner &cloner, ADContext &context,
       vjp(vjp), invoker(invoker),
       activityInfo(getActivityInfoHelper(
           context, original, witness->getSILAutoDiffIndices(), vjp)),
+      loopInfo(context.getPassManager().getAnalysis<SILLoopAnalysis>()
+                   ->get(original)),
       pullbackInfo(context, AutoDiffLinearMapKind::Pullback, original, vjp,
-                   witness->getSILAutoDiffIndices(), activityInfo) {
+                   witness->getSILAutoDiffIndices(), activityInfo, loopInfo) {
   // Create empty pullback function.
   pullback = createEmptyPullback();
   context.recordGeneratedFunction(pullback);
@@ -967,19 +1014,13 @@ EnumInst *VJPCloner::Implementation::buildPredecessorEnumValue(
       pullbackInfo.lookUpBranchingTraceEnumElement(predBB, succBB);
   auto enumEltType = getOpType(enumLoweredTy.getEnumElementType(
       enumEltDecl, getModule(), TypeExpansionContext::minimal()));
-  // If the enum element type does not have a box type (i.e. the enum case is
-  // not indirect), then directly create an enum.
-  auto boxType = dyn_cast<SILBoxType>(enumEltType.getASTType());
-  if (!boxType)
-    return builder.createEnum(loc, pbStructVal, enumEltDecl, enumLoweredTy);
-  // Otherwise, box the pullback struct value and create an enum.
-  auto *newBox = builder.createAllocBox(loc, boxType);
-  builder.emitScopedBorrowOperation(loc, newBox, [&](SILValue borrowedBox) {
-    auto *projectBox = builder.createProjectBox(loc, newBox, /*index*/ 0);
-    builder.emitStoreValueOperation(loc, pbStructVal, projectBox,
-                                    StoreOwnershipQualifier::Init);
-  });
-  return builder.createEnum(loc, newBox, enumEltDecl, enumLoweredTy);
+  // If the predecessor block is in a loop, its predecessor enum payload is a
+  // `Builtin.RawPointer`.
+  if (loopInfo->getLoopFor(predBB)) {
+    assert(enumEltType == SILType::getRawPointerType(getASTContext()));
+    llvm_unreachable("TODO!!!!!!!!!!!!!!!");
+  }
+  return builder.createEnum(loc, pbStructVal, enumEltDecl, enumLoweredTy);
 }
 
 bool VJPCloner::Implementation::run() {
@@ -990,6 +1031,8 @@ bool VJPCloner::Implementation::run() {
   // Create entry BB and arguments.
   auto *entry = vjp->createBasicBlock();
   createEntryArguments(vjp);
+
+  initializeTapeManagerIfNeeded();
 
   // Clone.
   SmallVector<SILValue, 4> entryArgs(entry->getArguments().begin(),
