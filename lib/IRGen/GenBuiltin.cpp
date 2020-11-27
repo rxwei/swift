@@ -1120,12 +1120,6 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     return;
   }
 
-  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeManagerDestroy) {
-    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
-    emitAutoDiffTapeManagerDestroy(IGF, tapeMgr);
-    return;
-  }
-
   if (Builtin.ID == BuiltinValueKind::AutoDiffTapeCreate) {
     Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
     auto loweredType = getLoweredTypeAndTypeInfo(

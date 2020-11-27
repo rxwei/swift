@@ -166,13 +166,15 @@ func test_tape_builtins() {
   buffer.storeBytes(of: pbStruct, as: type(of: pbStruct))
   let poppedBuffer = Builtin.autoDiffTapePop(tapeManager, tapeID)
   let _ = UnsafeMutableRawPointer(poppedBuffer).load(as: type(of: pbStruct))
-  Builtin.autoDiffTapeManagerDestroy(tapeManager)
 }
 
 // CHECK-LABEL: sil{{.*}}@test_tape_builtins
 // CHECK: bb0:
-// CHECK:   [[TAPE_MGR:%.*]] = builtin "autoDiffTapeManagerCreate"() : $Builtin.RawPointer
-// CHECK:   [[TAPE_ID:%.*]] = builtin "autoDiffTapeCreate"<ExamplePullbackStruct<Float>>([[TAPE_MGR]] : $Builtin.RawPointer, {{.*}} : $@thin ExamplePullbackStruct<Float>.Type) : $Builtin.Word
-// CHECK:   [[BUF:%.*]] = builtin "autoDiffTapeAllocate"([[TAPE_MGR]] : $Builtin.RawPointer, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
-// CHECK:   [[BUF_POPPED:%.*]] = builtin "autoDiffTapePop"([[TAPE_MGR]] : $Builtin.RawPointer, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
-// CHECK:   builtin "autoDiffTapeManagerDestroy"(%0 : $Builtin.RawPointer) : $()
+// CHECK:   [[TAPE_MGR:%.*]] = builtin "autoDiffTapeManagerCreate"() : $Builtin.NativeObject
+// CHECK:   [[BORROWED_TAPE_MGR:%.*]] = begin_borrow [[TAPE_MGR]] : $Builtin.NativeObject
+// CHECK:   [[TAPE_ID:%.*]] = builtin "autoDiffTapeCreate"<ExamplePullbackStruct<Float>>([[BORROWED_TAPE_MGR]] : $Builtin.NativeObject, {{.*}} : $@thin ExamplePullbackStruct<Float>.Type) : $Builtin.Word
+// CHECK:   [[BORROWED_TAPE_MGR:%.*]] = begin_borrow [[TAPE_MGR]] : $Builtin.NativeObject
+// CHECK:   [[BUF:%.*]] = builtin "autoDiffTapeAllocate"([[BORROWED_TAPE_MGR]] : $Builtin.NativeObject, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
+// CHECK:   [[BORROWED_TAPE_MGR:%.*]] = begin_borrow [[TAPE_MGR]] : $Builtin.NativeObject
+// CHECK:   [[BUF_POPPED:%.*]] = builtin "autoDiffTapePop"([[BORROWED_TAPE_MGR]] : $Builtin.NativeObject, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
+// CHECK:   destroy_value [[TAPE_MGR]]

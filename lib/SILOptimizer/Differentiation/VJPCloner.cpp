@@ -25,7 +25,6 @@
 #include "swift/SILOptimizer/Differentiation/PullbackCloner.h"
 #include "swift/SILOptimizer/Differentiation/Thunk.h"
 
-#include "swift/SIL/LoopInfo.h"
 #include "swift/SIL/TerminatorUtils.h"
 #include "swift/SIL/TypeSubstCloner.h"
 #include "swift/SILOptimizer/Analysis/LoopAnalysis.h"
@@ -77,7 +76,9 @@ class VJPCloner::Implementation final
   SmallPtrSet<SILBasicBlock *, 4> remappedBasicBlocks;
 
   /// The tape manager value. If null, no tape manager is needed (no loops).
-  SILValue tapeManager;
+  SILValue tapeManagerValue;
+  /// The unique, borrowed tape manager. This is valid until the exit block.
+  SILValue borrowedTapeManagerValue;
 
   bool errorOccurred = false;
 
@@ -104,15 +105,18 @@ class VJPCloner::Implementation final
   /// Run VJP generation. Returns true on error.
   bool run();
 
-  /// Initializes tape manager if needed.
-  void initializeTapeManagerIfNeeded() {
-    if (pullbackInfo.getBlocksInLoop().empty())
+  /// Initializes a tape object if needed.
+  void emitTapeInitializationIfNeeded() {
+    if (!pullbackInfo.hasLoops())
       return;
+    // Create a tape.
     Builder.setInsertionPoint(vjp->getEntryBlock());
-    tapeManager = Builder.createBuiltin(
+    tapeManagerValue = Builder.createBuiltin(
         original->getLocation(),
         getASTContext().getIdentifier("autoDiffTapeManagerCreate"),
-        SILType::getRawPointerType(getASTContext()), SubstitutionMap(), {});
+        SILType::getNativeObjectType(getASTContext()), SubstitutionMap(), {});
+    borrowedTapeManagerValue = Builder.createBeginBorrow(
+        original->getLocation(), tapeManagerValue);
 
     auto createTapeId = getASTContext().getIdentifier("autoDiffTapeCreate");
     SmallVector<ValueDecl *, 1> createTapeLookupResults;
@@ -121,7 +125,6 @@ class VJPCloner::Implementation final
         NLOptions::NL_IgnoreAccessControl, createTapeLookupResults);
     assert(createTapeLookupResults.size() == 1);
     auto *createTapeDecl = cast<FuncDecl>(createTapeLookupResults.front());
-
     for (auto entry : enumerate(pullbackInfo.getBlocksInLoop())) {
       auto *bb = entry.value();
       tapeIDs[bb] = entry.index();
@@ -129,12 +132,19 @@ class VJPCloner::Implementation final
       auto subMap = SubstitutionMap::get(
           createTapeDecl->getGenericSignature(),
           ArrayRef<Type>{pbStructType.getASTType()}, {});
+      auto pbStructMetatypeType = SILType::getPrimitiveObjectType(
+          CanMetatypeType::get(
+              pbStructType.getASTType(), MetatypeRepresentation::Thin));
+      auto pbStructMetatype = Builder.createMetatype(
+          original->getLocation(), pbStructMetatypeType);
       Builder.createBuiltin(
           original->getLocation(),
           getASTContext().getIdentifier("autoDiffTapeCreate"),
-          SILType::getRawPointerType(getASTContext()), subMap, {});
+          SILType::getBuiltinWordType(getASTContext()), subMap,
+          {borrowedTapeManagerValue, pbStructMetatype});
     }
-    LLVM_DEBUG(getADDebugStream() << "Initialized tape manager\n"
+    LLVM_DEBUG(getADDebugStream()
+               << "Tape manager initialized because there are loops\n"
                << *vjp->getEntryBlock() << '\n');
   }
 
@@ -218,7 +228,10 @@ public:
 
   void visitReturnInst(ReturnInst *ri) {
     auto loc = ri->getOperand().getLoc();
-    auto &builder = getBuilder();
+
+    // Clean up any borrowed tape.
+    if (borrowedTapeManagerValue)
+      Builder.createEndBorrow(loc, borrowedTapeManagerValue);
 
     // Build pullback struct value for original block.
     auto *origExit = ri->getParent();
@@ -228,17 +241,21 @@ public:
     auto *origRetInst = cast<ReturnInst>(origExit->getTerminator());
     auto origResult = getOpValue(origRetInst->getOperand());
     SmallVector<SILValue, 8> origResults;
-    extractAllElements(origResult, builder, origResults);
+    extractAllElements(origResult, Builder, origResults);
 
     // Get and partially apply the pullback.
     auto vjpGenericEnv = vjp->getGenericEnvironment();
     auto vjpSubstMap = vjpGenericEnv
                            ? vjpGenericEnv->getForwardingSubstitutionMap()
                            : vjp->getForwardingSubstitutionMap();
-    auto *pullbackRef = builder.createFunctionRef(loc, pullback);
-    auto *pullbackPartialApply =
-        builder.createPartialApply(loc, pullbackRef, vjpSubstMap, {pbStructVal},
-                                   ParameterConvention::Direct_Guaranteed);
+    auto *pullbackRef = Builder.createFunctionRef(loc, pullback);
+    SmallVector<SILValue, 2> partialApplyArgs;
+    if (tapeManagerValue)
+      partialApplyArgs.push_back(tapeManagerValue);
+    partialApplyArgs.push_back(pbStructVal);
+    auto *pullbackPartialApply = Builder.createPartialApply(
+        loc, pullbackRef, vjpSubstMap, partialApplyArgs,
+        ParameterConvention::Direct_Guaranteed);
     auto pullbackType = vjp->getLoweredFunctionType()
                             ->getResults()
                             .back()
@@ -258,7 +275,7 @@ public:
     } else if (pullbackSubstType->isABICompatibleWith(pullbackFnType, *vjp)
                    .isCompatible()) {
       pullbackValue =
-          builder.createConvertFunction(loc, pullbackPartialApply, pullbackType,
+          Builder.createConvertFunction(loc, pullbackPartialApply, pullbackType,
                                         /*withoutActuallyEscaping*/ false);
     } else {
       llvm::report_fatal_error("Pullback value type is not ABI-compatible "
@@ -269,8 +286,8 @@ public:
     SmallVector<SILValue, 8> directResults;
     directResults.append(origResults.begin(), origResults.end());
     directResults.push_back(pullbackValue);
-    builder.createReturn(ri->getLoc(),
-                         joinElements(directResults, builder, loc));
+    Builder.createReturn(ri->getLoc(),
+                         joinElements(directResults, Builder, loc));
   }
 
   void visitBranchInst(BranchInst *bi) {
@@ -775,6 +792,7 @@ const SILAutoDiffIndices VJPCloner::getIndices() const {
 }
 DifferentiationInvoker VJPCloner::getInvoker() const { return impl.invoker; }
 LinearMapInfo &VJPCloner::getPullbackInfo() const { return impl.pullbackInfo; }
+SILLoopInfo *VJPCloner::getLoopInfo() const { return impl.loopInfo; }
 const DifferentiableActivityInfo &VJPCloner::getActivityInfo() const {
   return impl.activityInfo;
 }
@@ -911,6 +929,14 @@ SILFunction *VJPCloner::Implementation::createEmptyPullback() {
     pbParams.push_back(inoutParamTanParam);
   }
 
+  // Accept a tape manager object if there are differentiated loops.
+  if (pullbackInfo.hasLoops()) {
+    pbParams.push_back({
+      getASTContext().TheNativeObjectType,
+      ParameterConvention::Direct_Owned
+    });
+  }
+
   // Accept a pullback struct in the pullback parameter list. This is the
   // returned pullback's closure context.
   auto *origExit = &*original->findReturnBB();
@@ -1017,8 +1043,25 @@ EnumInst *VJPCloner::Implementation::buildPredecessorEnumValue(
   // If the predecessor block is in a loop, its predecessor enum payload is a
   // `Builtin.RawPointer`.
   if (loopInfo->getLoopFor(predBB)) {
-    assert(enumEltType == SILType::getRawPointerType(getASTContext()));
-    llvm_unreachable("TODO!!!!!!!!!!!!!!!");
+    auto rawPtrType = SILType::getRawPointerType(getASTContext());
+    assert(enumEltType == rawPtrType);
+    auto tapeIDIt = tapeIDs.find(predBB);
+    assert(tapeIDIt != tapeIDs.end() &&
+           "Predecessor block is in a loop but does not have a tape ID");
+    auto tapeIDValue = builder.createIntegerLiteral(
+        loc, SILType::getBuiltinWordType(getASTContext()), tapeIDIt->second);
+    auto rawBufferValue = builder.createBuiltin(
+        loc, getASTContext().getIdentifier("autoDiffTapeAllocate"),
+        rawPtrType, SubstitutionMap(), {borrowedTapeManagerValue, tapeIDValue});
+    auto pbStructType = pbStructVal->getType();
+    auto typedBufferValue = builder.createPointerToAddress(
+        loc, rawBufferValue, pbStructType.getAddressType(),
+        /*isStrict*/ true);
+    builder.createStore(
+        loc, pbStructVal, typedBufferValue,
+        pbStructType.isTrivial(*pullback) ?
+            StoreOwnershipQualifier::Trivial : StoreOwnershipQualifier::Init);
+    return builder.createEnum(loc, rawBufferValue, enumEltDecl, enumLoweredTy);
   }
   return builder.createEnum(loc, pbStructVal, enumEltDecl, enumLoweredTy);
 }
@@ -1032,7 +1075,7 @@ bool VJPCloner::Implementation::run() {
   auto *entry = vjp->createBasicBlock();
   createEntryArguments(vjp);
 
-  initializeTapeManagerIfNeeded();
+  emitTapeInitializationIfNeeded();
 
   // Clone.
   SmallVector<SILValue, 4> entryArgs(entry->getArguments().begin(),

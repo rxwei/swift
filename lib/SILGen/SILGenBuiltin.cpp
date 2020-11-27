@@ -1477,24 +1477,10 @@ static ManagedValue emitBuiltinAutoDiffTapeManagerCreate(
       loc,
       ctx.getIdentifier(
           getBuiltinName(BuiltinValueKind::AutoDiffTapeManagerCreate)),
-      SILType::getRawPointerType(ctx),
+      SILType::getNativeObjectType(ctx),
       subs,
       /*args*/ {});
-  return ManagedValue::forUnmanaged(builtinApply);
-}
-
-static ManagedValue emitBuiltinAutoDiffTapeManagerDestroy(
-    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
-    ArrayRef<ManagedValue> args, SGFContext C) {
-  ASTContext &ctx = SGF.getASTContext();
-  auto *builtinApply = SGF.B.createBuiltin(
-      loc,
-      ctx.getIdentifier(
-          getBuiltinName(BuiltinValueKind::AutoDiffTapeManagerDestroy)),
-      SGF.getLoweredLoadableType(ctx.TheEmptyTupleType),
-      subs,
-      /*args*/ {args[0].getValue()});
-  return ManagedValue::forUnmanaged(builtinApply);
+  return SGF.emitManagedRValueWithCleanup(builtinApply);
 }
 
 static ManagedValue emitBuiltinAutoDiffTapeCreate(
@@ -1507,7 +1493,7 @@ static ManagedValue emitBuiltinAutoDiffTapeCreate(
           getBuiltinName(BuiltinValueKind::AutoDiffTapeCreate)),
       SILType::getBuiltinWordType(ctx),
       subs,
-      /*args*/ {args[0].getValue(), args[1].getValue()});
+      /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
   return ManagedValue::forUnmanaged(builtinApply);
 }
 
@@ -1521,7 +1507,7 @@ static ManagedValue emitBuiltinAutoDiffTapeAllocate(
           getBuiltinName(BuiltinValueKind::AutoDiffTapeAllocate)),
       SILType::getRawPointerType(ctx),
       SubstitutionMap(),
-      /*args*/ {args[0].getValue(), args[1].getValue()});
+      /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
   return ManagedValue::forUnmanaged(builtinApply);
 }
 
@@ -1535,7 +1521,7 @@ static ManagedValue emitBuiltinAutoDiffTapePop(
           getBuiltinName(BuiltinValueKind::AutoDiffTapePop)),
       SILType::getRawPointerType(ctx),
       SubstitutionMap(),
-      /*args*/ {args[0].getValue(), args[1].getValue()});
+      /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
   return ManagedValue::forUnmanaged(builtinApply);
 }
 

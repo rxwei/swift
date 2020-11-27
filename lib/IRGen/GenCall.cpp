@@ -4590,14 +4590,6 @@ Address irgen::emitAutoDiffTapeManagerCreate(IRGenFunction &IGF) {
   return Address(call, IGF.IGM.getPointerAlignment());
 }
 
-void irgen::emitAutoDiffTapeManagerDestroy(IRGenFunction &IGF,
-                                           Address tapeManager) {
-  auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffTapeManagerDestroyFn(), {tapeManager.getAddress()});
-  call->setDoesNotThrow();
-  call->setCallingConv(IGF.IGM.SwiftCC);
-}
-
 llvm::Value *irgen::emitAutoDiffTapeCreate(IRGenFunction &IGF,
                                            Address tapeManager,
                                            Address typeMetadata) {

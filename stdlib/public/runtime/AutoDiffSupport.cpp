@@ -12,11 +12,35 @@
 
 #include "AutoDiffSupport.h"
 #include "swift/Runtime/Metadata.h"
+#include "swift/Runtime/HeapObject.h"
 
 using namespace swift;
 using namespace llvm;
 
-AutoDiffTapeManager::AutoDiffTapeManager() {}
+SWIFT_CC(swift)
+static void swift_autodiff_tape_manager_destroy(SWIFT_CONTEXT HeapObject *obj) {
+  auto *manager = static_cast<AutoDiffTapeManager *>(obj);
+  swift_slowDealloc(
+      manager, sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
+}
+
+/// Heap metadata for an asynchronous task.
+static FullMetadata<HeapMetadata> tapeManagerHeapMetadata = {
+  {
+    {
+      &swift_autodiff_tape_manager_destroy
+    },
+    {
+      /*value witness table*/ nullptr
+    }
+  },
+  {
+    MetadataKind::Opaque
+  }
+};
+
+AutoDiffTapeManager::AutoDiffTapeManager()
+    : HeapObject(&tapeManagerHeapMetadata) {}
 
 size_t AutoDiffTapeManager::createTape(const Metadata *elementType) {
   assert(
@@ -59,11 +83,6 @@ AutoDiffTapeManager *swift::swift_autodiff_tape_manager_create() {
   auto *buffer = (AutoDiffTapeManager *)swift_slowAlloc(
       sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
   return new (buffer) AutoDiffTapeManager;
-}
-
-void swift::swift_autodiff_tape_manager_destroy(AutoDiffTapeManager *manager) {
-  swift_slowDealloc(
-      manager, sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
 }
 
 size_t swift::swift_autodiff_tape_create(AutoDiffTapeManager *manager,

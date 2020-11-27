@@ -222,6 +222,10 @@ public:
     return lookup->getSecond();
   }
 
+  bool hasLoops() const {
+    return !blocksInLoop.empty();
+  }
+
   ArrayRef<SILBasicBlock *> getBlocksInLoop() const {
     return blocksInLoop.getArrayRef();
   }

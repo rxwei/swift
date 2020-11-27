@@ -752,19 +752,16 @@ BUILTIN_MISC_OPERATION_WITH_SILGEN(CreateAsyncTaskFuture,
 /// is a pure value and therefore we can consider it as readnone).
 BUILTIN_MISC_OPERATION_WITH_SILGEN(GlobalStringTablePointer, "globalStringTablePointer", "n", Special)
 
-// autoDiffTapeManagerCreate: () -> Builtin.RawPointer
+// autoDiffTapeManagerCreate: () -> Builtin.NativeObject
 BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeManagerCreate, "autoDiffTapeManagerCreate", "n", Special)
 
-// autoDiffTapeManagerDestroy: (Builtin.RawPointer) -> Void
-BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeManagerDestroy, "autoDiffTapeManagerDestroy", "", Special)
-
-// autoDiffTapeCreate: <T> (Builtin.RawPointer, T.Type) -> Builtin.Word
+// autoDiffTapeCreate: <T> (Builtin.NativeObject, T.Type) -> Builtin.Word
 BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeCreate, "autoDiffTapeCreate", "", Special)
 
-// autoDiffTapeAllocate: (Builtin.RawPointer, Builtin.Word) -> Void
+// autoDiffTapeAllocate: (Builtin.NativeObject, Builtin.Word) -> Builtin.RawPointer
 BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeAllocate, "autoDiffTapeAllocate", "", Special)
 
-// autoDiffTapePop: (Builtin.RawPointer, Builtin.Word) -> Void
+// autoDiffTapePop: (Builtin.NativeObject, Builtin.Word) -> Builtin.RawPointer
 BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapePop, "autoDiffTapePop", "", Special)
 
 #undef BUILTIN_MISC_OPERATION_WITH_SILGEN

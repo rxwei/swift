@@ -1526,14 +1526,6 @@ FUNCTION(AutoDiffTapeManagerCreate,
          ARGS(),
          ATTRS(NoUnwind, ArgMemOnly))
 
-// void swift_autodiff_tape_manager_destroy(AutoDiffTapeManager *);
-FUNCTION(AutoDiffTapeManagerDestroy,
-         swift_autodiff_tape_manager_destroy, SwiftCC,
-         DifferentiationAvailability,
-         RETURNS(VoidTy),
-         ARGS(AutoDiffTapeManagerPtrTy),
-         ATTRS(NoUnwind, ArgMemOnly))
-
 // size_t swift_autodiff_tape_create(AutoDiffTapeManager *,
 //                                   const Metadata *elementType);
 FUNCTION(AutoDiffTapeCreate,

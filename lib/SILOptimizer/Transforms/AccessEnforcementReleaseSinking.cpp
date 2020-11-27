@@ -142,7 +142,6 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::IntInstrprofIncrement:
     case BuiltinValueKind::GetCurrentAsyncTask:
     case BuiltinValueKind::AutoDiffTapeManagerCreate:
-    case BuiltinValueKind::AutoDiffTapeManagerDestroy:
     case BuiltinValueKind::AutoDiffTapeCreate:
     case BuiltinValueKind::AutoDiffTapeAllocate:
     case BuiltinValueKind::AutoDiffTapePop:

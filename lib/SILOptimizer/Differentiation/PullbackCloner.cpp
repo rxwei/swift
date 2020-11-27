@@ -130,6 +130,9 @@ private:
   /// The seed arguments of the pullback function.
   SmallVector<SILArgument *, 4> seeds;
 
+  /// The tape manager argument, if any.
+  SILArgument *tapeManagerValue = nullptr;
+
   llvm::BumpPtrAllocator allocator;
 
   bool errorOccurred = false;
@@ -1895,10 +1898,19 @@ bool PullbackCloner::Implementation::run() {
     if (origBB == origExit) {
       assert(pullbackBB->isEntry());
       createEntryArguments(&pullback);
+      // Obtain the tape manager, if any.
+      if (getPullbackInfo().hasLoops()) {
+        // The second-from-last argument is the tape manager value which has
+        // type `Builtin.NativeObject`.
+        tapeManagerValue = pullbackBB->getArgument(
+            pullbackBB->getNumArguments() - 2);
+        assert(tapeManagerValue->getType() ==
+               SILType::getNativeObjectType(getASTContext()));
+      }
+      // Obtain and destructure pullback struct elements.
       auto *mainPullbackStruct = pullbackBB->getArguments().back();
       assert(mainPullbackStruct->getType() == pbStructLoweredType);
       pullbackStructArguments[origBB] = mainPullbackStruct;
-      // Destructure the pullback struct to get the elements.
       builder.setInsertionPoint(pullbackBB);
       auto *dsi = builder.createDestructureStruct(pbLoc, mainPullbackStruct);
       initializePullbackStructElements(origBB, dsi->getResults());
@@ -1969,9 +1981,11 @@ bool PullbackCloner::Implementation::run() {
 
   auto *pullbackEntry = pullback.getEntryBlock();
   // The pullback function has type:
-  // `(seed0, seed1, ..., exit_pb_struct) -> (d_arg0, ..., d_argn)`.
+  // `(seed0, seed1, ..., tape_mgr?, exit_pb_struct) -> (d_arg0, ..., d_argn)`.
   auto pbParamArgs = pullback.getArgumentsWithoutIndirectResults();
-  assert(getIndices().results->getNumIndices() == pbParamArgs.size() - 1 &&
+  auto numPbContextArgs = tapeManagerValue ? 2 : 1;
+  assert(getIndices().results->getNumIndices() ==
+             pbParamArgs.size() - numPbContextArgs &&
          pbParamArgs.size() >= 2);
   // Assign adjoints for original result.
   builder.setInsertionPoint(pullbackEntry,
@@ -2032,6 +2046,10 @@ bool PullbackCloner::Implementation::run() {
   auto *origEntry = getOriginal().getEntryBlock();
   auto *pbExit = getPullbackBlock(origEntry);
   builder.setInsertionPoint(pbExit);
+
+  // Destroy the tape manager, if any, now that all uses are done.
+  if (tapeManagerValue)
+    builder.createDestroyValue(pbLoc, tapeManagerValue);
 
   // This vector will contain all the materialized return elements.
   SmallVector<SILValue, 8> retElts;
@@ -2328,17 +2346,22 @@ SILBasicBlock *PullbackCloner::Implementation::buildPullbackSuccessor(
   }
   // Propagate pullback struct argument.
   SILBuilder pullbackTrampolineBBBuilder(pullbackTrampolineBB);
-  auto *predPBStructVal = pullbackTrampolineBB->getArguments().front();
-  auto boxType = dyn_cast<SILBoxType>(predPBStructVal->getType().getASTType());
-  if (!boxType) {
-    trampolineArguments.push_back(predPBStructVal);
+  auto *pullbackTrampolineBBArg = pullbackTrampolineBB->getArguments().front();
+  if (vjpCloner.getLoopInfo()->getLoopFor(origPredBB)) {
+    assert(pullbackTrampolineBBArg->getType() ==
+               SILType::getRawPointerType(getASTContext()));
+    auto pbStructType =
+        getPullbackInfo().getLinearMapStructLoweredType(origPredBB);
+    auto predPbStructAddr = pullbackTrampolineBBBuilder.createPointerToAddress(
+        loc, pullbackTrampolineBBArg, pbStructType.getAddressType(),
+        /*isStrict*/ true);
+    auto predPbStructVal = pullbackTrampolineBBBuilder.createLoad(
+        loc, predPbStructAddr,
+        pbStructType.isTrivial(getPullback()) ?
+            LoadOwnershipQualifier::Trivial : LoadOwnershipQualifier::Take);
+    trampolineArguments.push_back(predPbStructVal);
   } else {
-    auto *projectBox = pullbackTrampolineBBBuilder.createProjectBox(
-        loc, predPBStructVal, /*index*/ 0);
-    auto loaded = pullbackTrampolineBBBuilder.emitLoadValueOperation(
-        loc, projectBox, LoadOwnershipQualifier::Copy);
-    pullbackTrampolineBBBuilder.emitDestroyValueOperation(loc, predPBStructVal);
-    trampolineArguments.push_back(loaded);
+    trampolineArguments.push_back(pullbackTrampolineBBArg);
   }
   // Branch from pullback trampoline block to pullback block.
   pullbackTrampolineBBBuilder.createBranch(loc, pullbackBB,

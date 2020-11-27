@@ -1384,17 +1384,12 @@ static ValueDecl *getCreateAsyncTaskFuture(ASTContext &ctx, Identifier id) {
 }
 
 static ValueDecl *getAutoDiffTapeManagerCreate(ASTContext &ctx, Identifier id) {
-  return getBuiltinFunction(id, {}, ctx.TheRawPointerType);
-}
-
-static ValueDecl *getAutoDiffTapeManagerDestroy(ASTContext &ctx,
-                                                Identifier id) {
-  return getBuiltinFunction(id, {ctx.TheRawPointerType}, ctx.TheEmptyTupleType);
+  return getBuiltinFunction(id, {}, ctx.TheNativeObjectType);
 }
 
 static ValueDecl *getAutoDiffTapeCreate(ASTContext &ctx, Identifier id) {
   BuiltinFunctionBuilder builder(ctx);
-  builder.addParameter(makeConcrete(ctx.TheRawPointerType));
+  builder.addParameter(makeConcrete(ctx.TheNativeObjectType));
   builder.addParameter(makeMetatype(makeGenericParam(0)));
   builder.setResult(makeConcrete(BuiltinIntegerType::getWordType(ctx)));
   return builder.build(id);
@@ -1403,14 +1398,14 @@ static ValueDecl *getAutoDiffTapeCreate(ASTContext &ctx, Identifier id) {
 static ValueDecl *getAutoDiffTapeAllocate(ASTContext &ctx, Identifier id) {
   return getBuiltinFunction(
       id,
-      {ctx.TheRawPointerType, BuiltinIntegerType::getWordType(ctx)},
+      {ctx.TheNativeObjectType, BuiltinIntegerType::getWordType(ctx)},
       ctx.TheRawPointerType);
 }
 
 static ValueDecl *getAutoDiffTapePop(ASTContext &ctx, Identifier id) {
   return getBuiltinFunction(
       id,
-      {ctx.TheRawPointerType, BuiltinIntegerType::getWordType(ctx)},
+      {ctx.TheNativeObjectType, BuiltinIntegerType::getWordType(ctx)},
       ctx.TheRawPointerType);
 }
 
@@ -2583,9 +2578,6 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
 
   case BuiltinValueKind::AutoDiffTapeManagerCreate:
     return getAutoDiffTapeManagerCreate(Context, Id);
-
-  case BuiltinValueKind::AutoDiffTapeManagerDestroy:
-    return getAutoDiffTapeManagerDestroy(Context, Id);
 
   case BuiltinValueKind::AutoDiffTapeCreate:
     return getAutoDiffTapeCreate(Context, Id);

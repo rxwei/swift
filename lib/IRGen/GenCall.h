@@ -434,7 +434,6 @@ namespace irgen {
                        CanSILFunctionType fnType);
 
   Address emitAutoDiffTapeManagerCreate(IRGenFunction &IGF);
-  void emitAutoDiffTapeManagerDestroy(IRGenFunction &IGF, Address tapeManager);
   llvm::Value *emitAutoDiffTapeCreate(IRGenFunction &IGF,
                                       Address tapeManager,
                                       Address typeMetadata);

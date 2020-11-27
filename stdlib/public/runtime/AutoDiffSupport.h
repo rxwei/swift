@@ -43,7 +43,7 @@ struct AutoDiffTapeDescriptor {
 /// storing linear map structures. Each basic block has a unique linear map
 /// structure type, therefore the number of tapes is bound by the number of
 /// basic blocks.
-class AutoDiffTapeManager {
+class AutoDiffTapeManager : public HeapObject {
 private:
   llvm::BumpPtrAllocator allocator;
   llvm::SmallVector<AutoDiffTapeDescriptor, 4> tapes;
@@ -68,10 +68,6 @@ public:
 /// Creates a tape manager.
 SWIFT_EXPORT_FROM(swift_Differentiation) SWIFT_CC(swift)
 AutoDiffTapeManager *swift_autodiff_tape_manager_create();
-
-/// Destroys the given tape manager.
-SWIFT_EXPORT_FROM(swift_Differentiation) SWIFT_CC(swift)
-void swift_autodiff_tape_manager_destroy(AutoDiffTapeManager *);
 
 /// Creates a tape that stores elements of the given type in the given tape
 /// manager and returns its tape ID.

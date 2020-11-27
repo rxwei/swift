@@ -864,11 +864,6 @@ ANY_OWNERSHIP_BUILTIN(PoundAssert)
 ANY_OWNERSHIP_BUILTIN(GlobalStringTablePointer)
 ANY_OWNERSHIP_BUILTIN(TypePtrAuthDiscriminator)
 ANY_OWNERSHIP_BUILTIN(IntInstrprofIncrement)
-ANY_OWNERSHIP_BUILTIN(AutoDiffTapeManagerCreate)
-ANY_OWNERSHIP_BUILTIN(AutoDiffTapeManagerDestroy)
-ANY_OWNERSHIP_BUILTIN(AutoDiffTapeCreate)
-ANY_OWNERSHIP_BUILTIN(AutoDiffTapeAllocate)
-ANY_OWNERSHIP_BUILTIN(AutoDiffTapePop)
 #undef ANY_OWNERSHIP_BUILTIN
 
 // This is correct today since we do not have any builtins which return
@@ -885,6 +880,9 @@ CONSTANT_OWNERSHIP_BUILTIN(Owned, LifetimeEnding, UnsafeGuaranteed)
 CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, CancelAsyncTask)
 CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, CreateAsyncTask)
 CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, CreateAsyncTaskFuture)
+CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, AutoDiffTapeCreate)
+CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, AutoDiffTapeAllocate)
+CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, AutoDiffTapePop)
 
 #undef CONSTANT_OWNERSHIP_BUILTIN
 
@@ -895,6 +893,7 @@ CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, NonLifetimeEnding, CreateAsyncTaskFuture)
         "Builtin should never be visited! E.x.: It may not have arguments");   \
   }
 SHOULD_NEVER_VISIT_BUILTIN(GetCurrentAsyncTask)
+SHOULD_NEVER_VISIT_BUILTIN(AutoDiffTapeManagerCreate)
 #undef SHOULD_NEVER_VISIT_BUILTIN
 
 // Builtins that should be lowered to SIL instructions so we should never see
