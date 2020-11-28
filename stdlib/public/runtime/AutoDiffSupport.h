@@ -19,17 +19,16 @@
 
 namespace swift {
 
-/// A data structure responsible for allocating and walking tapes used for
-/// storing linear map structures. Each basic block has a unique linear map
-/// structure type, therefore the number of tapes is bound by the number of
-/// basic blocks.
-class AutoDiffTapeManager : public HeapObject {
+/// A data structure responsible for efficiently allocating closure contexts for
+/// linear maps such as pullbacks, including rescursive branching trace enum
+/// case payloads.
+class AutoDiffContextAllocator : public HeapObject {
 private:
-  /// The allocator.
   llvm::BumpPtrAllocator allocator;
 
 public:
-  AutoDiffTapeManager();
+  /// Creates an allocator.
+  AutoDiffContextAllocator();
   /// Allocates a new slot for the given type.
   void *allocate(const Metadata *elementType);
 };
@@ -37,13 +36,13 @@ public:
 /// Creates a tape manager which holds an allocator and a tail-allocated linear
 /// map strucutre.
 SWIFT_EXPORT_FROM(swift_Differentiation) SWIFT_CC(swift)
-AutoDiffTapeManager *swift_autodiff_allocator_create(
-    const Metadata *linearMapStructureType);
+AutoDiffContextAllocator *swift_autoDiffContextAllocatorCreate();
 
 /// Allocates a new slot on the tape with the given ID and returns a pointer
 /// to the slot's uninitialized memory.
 SWIFT_EXPORT_FROM(swift_Differentiation) SWIFT_CC(swift)
-void *swift_autodiff_allocator_allocate(AutoDiffTapeManager *, size_t tapeID);
+void *swift_autoDiffContextAllocate(
+    AutoDiffContextAllocator *, const Metadata *linearMapStructType);
 
 }
 

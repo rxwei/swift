@@ -131,7 +131,7 @@ private:
   SmallVector<SILArgument *, 4> seeds;
 
   /// The tape manager value, if any.
-  SILValue tapeManagerValue = nullptr;
+  SILValue contextAllocatorValue = nullptr;
 
   llvm::BumpPtrAllocator allocator;
 
@@ -1903,9 +1903,9 @@ bool PullbackCloner::Implementation::run() {
       if (getPullbackInfo().hasLoops()) {
         // The second-from-last argument is the tape manager value which has
         // type `Builtin.NativeObject`.
-        tapeManagerValue = pullbackBB->getArgument(
+        contextAllocatorValue = pullbackBB->getArgument(
             pullbackBB->getNumArguments() - 2);
-        assert(tapeManagerValue->getType() ==
+        assert(contextAllocatorValue->getType() ==
                SILType::getNativeObjectType(getASTContext()));
       }
       // Obtain and destructure pullback struct elements.
@@ -1984,7 +1984,7 @@ bool PullbackCloner::Implementation::run() {
   // The pullback function has type:
   // `(seed0, seed1, ..., tape_mgr?, exit_pb_struct) -> (d_arg0, ..., d_argn)`.
   auto pbParamArgs = pullback.getArgumentsWithoutIndirectResults();
-  auto numPbContextArgs = tapeManagerValue ? 2 : 1;
+  auto numPbContextArgs = contextAllocatorValue ? 2 : 1;
   assert(getIndices().results->getNumIndices() ==
              pbParamArgs.size() - numPbContextArgs &&
          pbParamArgs.size() >= 2);

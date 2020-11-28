@@ -75,19 +75,22 @@ class VJPCloner::Implementation final
   /// predecessor enum argument).
   SmallPtrSet<SILBasicBlock *, 4> remappedBasicBlocks;
 
-  /// The tape manager value. If null, no tape manager is needed (no loops).
-  SILValue tapeManagerValue;
-  /// The unique, borrowed tape manager. This is valid until the exit block.
-  SILValue borrowedTapeManagerValue;
+  /// The context allocator value. If null, no context allocator is needed (no
+  /// loops).
+  SILValue contextAllocatorValue;
+  /// The unique, borrowed context allocator value. This is valid until the exit
+  /// block.
+  SILValue borrowedContextAllocatorValue;
+
+  /// The generic signature of the `Builtin.autoDiffContextAllocate(_:_:)`
+  /// declaration. It is used for creating a builtin call.
+  GenericSignature builtinAutoDiffContextAllocateGenericSignature;
 
   bool errorOccurred = false;
 
   /// Mapping from original blocks to pullback values. Used to build pullback
   /// struct instances.
   llvm::DenseMap<SILBasicBlock *, SmallVector<SILValue, 8>> pullbackValues;
-
-  /// Mapping from basic blocks to tape IDs.
-  llvm::DenseMap<SILBasicBlock *, unsigned> tapeIDs;
 
   ASTContext &getASTContext() const { return vjp->getASTContext(); }
   SILModule &getModule() const { return vjp->getModule(); }
@@ -109,41 +112,15 @@ class VJPCloner::Implementation final
   void emitTapeInitializationIfNeeded() {
     if (!pullbackInfo.hasLoops())
       return;
-    // Create a tape.
+    // Create a context allocator.
     Builder.setInsertionPoint(vjp->getEntryBlock());
-    tapeManagerValue = Builder.createBuiltin(
+    contextAllocatorValue = Builder.createBuiltin(
         original->getLocation(),
-        getASTContext().getIdentifier("autoDiffTapeManagerCreate"),
+        getASTContext().getIdentifier(
+            getBuiltinName(BuiltinValueKind::AutoDiffContextAllocatorCreate)),
         SILType::getNativeObjectType(getASTContext()), SubstitutionMap(), {});
-    borrowedTapeManagerValue = Builder.createBeginBorrow(
-        original->getLocation(), tapeManagerValue);
-
-    auto createTapeId = getASTContext().getIdentifier("autoDiffTapeCreate");
-    SmallVector<ValueDecl *, 1> createTapeLookupResults;
-    getASTContext().TheBuiltinModule->lookupQualified(
-        getASTContext().TheBuiltinModule, DeclNameRef(createTapeId),
-        NLOptions::NL_IgnoreAccessControl, createTapeLookupResults);
-    assert(createTapeLookupResults.size() == 1);
-    auto *createTapeDecl = cast<FuncDecl>(createTapeLookupResults.front());
-    for (auto entry : enumerate(pullbackInfo.getBlocksInLoop())) {
-      auto *bb = entry.value();
-      tapeIDs[bb] = entry.index();
-      auto pbStructType =
-          remapType(pullbackInfo.getLinearMapStructLoweredType(bb));
-      auto subMap = SubstitutionMap::get(
-          createTapeDecl->getGenericSignature(),
-          ArrayRef<Type>{pbStructType.getASTType()}, {});
-      auto pbStructMetatypeType = SILType::getPrimitiveObjectType(
-          CanMetatypeType::get(
-              pbStructType.getASTType(), MetatypeRepresentation::Thin));
-      auto pbStructMetatype = Builder.createMetatype(
-          original->getLocation(), pbStructMetatypeType);
-      Builder.createBuiltin(
-          original->getLocation(),
-          getASTContext().getIdentifier("autoDiffTapeCreate"),
-          SILType::getBuiltinWordType(getASTContext()), subMap,
-          {borrowedTapeManagerValue, pbStructMetatype});
-    }
+    borrowedContextAllocatorValue = Builder.createBeginBorrow(
+        original->getLocation(), contextAllocatorValue);
     LLVM_DEBUG(getADDebugStream()
                << "Tape manager initialized because there are loops\n"
                << *vjp->getEntryBlock() << '\n');
@@ -155,6 +132,19 @@ class VJPCloner::Implementation final
     Lowering::AbstractionPattern pattern(vjpGenSig,
                                          type->getCanonicalType(vjpGenSig));
     return vjp->getLoweredType(pattern, type);
+  }
+
+  GenericSignature getBuiltinAutoDiffContextAllocateDecl() {
+    if (builtinAutoDiffContextAllocateGenericSignature)
+      return builtinAutoDiffContextAllocateGenericSignature;
+    auto &ctx = getASTContext();
+    auto *decl = cast<FuncDecl>(getBuiltinValueDecl(
+        ctx, ctx.getIdentifier(
+            getBuiltinName(BuiltinValueKind::AutoDiffContextAllocate))));
+    builtinAutoDiffContextAllocateGenericSignature =
+        decl->getGenericSignature();
+    assert(builtinAutoDiffContextAllocateGenericSignature);
+    return builtinAutoDiffContextAllocateGenericSignature;
   }
 
   // Creates a trampoline block for given original terminator instruction, the
@@ -224,8 +214,8 @@ public:
     auto loc = ri->getOperand().getLoc();
 
     // Clean up any borrowed tape.
-    if (borrowedTapeManagerValue)
-      Builder.createEndBorrow(loc, borrowedTapeManagerValue);
+    if (borrowedContextAllocatorValue)
+      Builder.createEndBorrow(loc, borrowedContextAllocatorValue);
 
     // Build pullback struct value for original block.
     auto *origExit = ri->getParent();
@@ -244,8 +234,8 @@ public:
                            : vjp->getForwardingSubstitutionMap();
     auto *pullbackRef = Builder.createFunctionRef(loc, pullback);
     SmallVector<SILValue, 2> partialApplyArgs;
-    if (tapeManagerValue)
-      partialApplyArgs.push_back(tapeManagerValue);
+    if (contextAllocatorValue)
+      partialApplyArgs.push_back(contextAllocatorValue);
     partialApplyArgs.push_back(pbStructVal);
     auto *pullbackPartialApply = Builder.createPartialApply(
         loc, pullbackRef, vjpSubstMap, partialApplyArgs,
@@ -1040,15 +1030,19 @@ EnumInst *VJPCloner::Implementation::buildPredecessorEnumValue(
   if (loopInfo->getLoopFor(predBB)) {
     auto rawPtrType = SILType::getRawPointerType(getASTContext());
     assert(enumEltType == rawPtrType);
-    auto tapeIDIt = tapeIDs.find(predBB);
-    assert(tapeIDIt != tapeIDs.end() &&
-           "Predecessor block is in a loop but does not have a tape ID");
-    auto tapeIDValue = builder.createIntegerLiteral(
-        loc, SILType::getBuiltinWordType(getASTContext()), tapeIDIt->second);
-    auto rawBufferValue = builder.createBuiltin(
-        loc, getASTContext().getIdentifier("autoDiffTapeAllocate"),
-        rawPtrType, SubstitutionMap(), {borrowedTapeManagerValue, tapeIDValue});
     auto pbStructType = pbStructVal->getType();
+    auto pbStructMetatypeValue = Builder.createMetatype(
+        loc, SILType::getPrimitiveObjectType(CanMetatypeType::get(
+            pbStructType.getASTType(), MetatypeRepresentation::Thin)));
+    auto subMap = SubstitutionMap::get(
+        builtinAutoDiffContextAllocateGenericSignature,
+        ArrayRef<Type>{pbStructType.getASTType()}, /*conformances*/ {});
+    auto rawBufferValue = builder.createBuiltin(
+        loc,
+        getASTContext().getIdentifier(
+            getBuiltinName(BuiltinValueKind::AutoDiffContextAllocate)),
+        rawPtrType, subMap,
+        {borrowedContextAllocatorValue, pbStructMetatypeValue});
     auto typedBufferValue = builder.createPointerToAddress(
         loc, rawBufferValue, pbStructType.getAddressType(),
         /*isStrict*/ true);

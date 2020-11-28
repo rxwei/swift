@@ -752,14 +752,11 @@ BUILTIN_MISC_OPERATION_WITH_SILGEN(CreateAsyncTaskFuture,
 /// is a pure value and therefore we can consider it as readnone).
 BUILTIN_MISC_OPERATION_WITH_SILGEN(GlobalStringTablePointer, "globalStringTablePointer", "n", Special)
 
-// autoDiffTapeManagerCreate: () -> Builtin.NativeObject
-BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeManagerCreate, "autoDiffTapeManagerCreate", "n", Special)
+// autoDiffContextAllocatorCreate: () -> Builtin.NativeObject
+BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffContextAllocatorCreate, "autoDiffContextAllocatorCreate", "n", Special)
 
-// autoDiffTapeCreate: <T> (Builtin.NativeObject, T.Type) -> Builtin.Word
-BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeCreate, "autoDiffTapeCreate", "", Special)
-
-// autoDiffTapeAllocate: (Builtin.NativeObject, Builtin.Word) -> Builtin.RawPointer
-BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeAllocate, "autoDiffTapeAllocate", "", Special)
+// autoDiffContextAllocate: (Builtin.NativeObject, Builtin.Word, Builtin.Word) -> Builtin.RawPointer
+BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffContextAllocate, "autoDiffContextAllocate", "", Special)
 
 #undef BUILTIN_MISC_OPERATION_WITH_SILGEN
 

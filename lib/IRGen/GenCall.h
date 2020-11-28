@@ -433,13 +433,10 @@ namespace irgen {
   void emitAsyncReturn(IRGenFunction &IGF, AsyncContextLayout &layout,
                        CanSILFunctionType fnType);
 
-  Address emitAutoDiffTapeManagerCreate(IRGenFunction &IGF);
-  llvm::Value *emitAutoDiffTapeCreate(IRGenFunction &IGF,
-                                      Address tapeManager,
+  Address emitAutoDiffContextAllocatorCreate(IRGenFunction &IGF);
+  Address emitAutoDiffContextAllocate(IRGenFunction &IGF,
+                                      Address contextAllocator,
                                       Address typeMetadata);
-  Address emitAutoDiffTapeAllocate(IRGenFunction &IGF,
-                                   Address tapeManager,
-                                   llvm::Value *tapeID);
 } // end namespace irgen
 } // end namespace swift
 

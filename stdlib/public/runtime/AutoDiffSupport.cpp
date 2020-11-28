@@ -18,17 +18,19 @@ using namespace swift;
 using namespace llvm;
 
 SWIFT_CC(swift)
-static void swift_autodiff_tape_manager_destroy(SWIFT_CONTEXT HeapObject *obj) {
-  auto *manager = static_cast<AutoDiffTapeManager *>(obj);
+static void swift_autodiff_context_allocator_destroy(
+    SWIFT_CONTEXT HeapObject *obj) {
+  auto *manager = static_cast<AutoDiffContextAllocator *>(obj);
   swift_slowDealloc(
-      manager, sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
+      manager, sizeof(AutoDiffContextAllocator),
+      alignof(AutoDiffContextAllocator) - 1);
 }
 
 /// Heap metadata for an asynchronous task.
-static FullMetadata<HeapMetadata> tapeManagerHeapMetadata = {
+static FullMetadata<HeapMetadata> contextAllocatorHeapMetadata = {
   {
     {
-      &swift_autodiff_tape_manager_destroy
+      &swift_autodiff_context_allocator_destroy
     },
     {
       /*value witness table*/ nullptr
@@ -39,63 +41,21 @@ static FullMetadata<HeapMetadata> tapeManagerHeapMetadata = {
   }
 };
 
-AutoDiffTapeManager::AutoDiffTapeManager()
-    : HeapObject(&tapeManagerHeapMetadata) {}
+AutoDiffContextAllocator::AutoDiffContextAllocator()
+    : HeapObject(&contextAllocatorHeapMetadata) {}
 
-size_t AutoDiffTapeManager::createTape(const Metadata *elementType) {
-  assert(
-      elementType->getKind() == MetadataKind::Struct &&
-      "Automatic differentiation tapes are for storing linear map structs, but "
-      "the given type is not a struct");
-  size_t index = tapes.size();
+void *AutoDiffContextAllocator::allocate(const Metadata *elementType) {
   auto *layout = elementType->getTypeLayout();
-  size_t elementSize = layout->size;
-  size_t elementAlignment = layout->flags.getAlignment();
-  tapes.push_back({
-    elementSize,
-    elementAlignment,
-    alignTo(sizeof(AutoDiffTapeSlotHeader), elementAlignment),
-    /*last*/ nullptr
-  });
-  return index;
+  return allocator.Allocate(layout->size, layout->flags.getAlignment());
 }
 
-void *AutoDiffTapeManager::allocate(size_t tapeID) {
-  auto &tapeDescriptor = getTapeDescriptor(tapeID);
-  auto *slotBuffer = allocator.Allocate(
-      tapeDescriptor.slotHeaderAllocationSize + tapeDescriptor.elementSize,
-      tapeDescriptor.elementAlignment);
-  tapeDescriptor.last =
-      new (slotBuffer) AutoDiffTapeSlotHeader {tapeDescriptor.last};
-  return static_cast<uint8_t *>(slotBuffer) +
-      tapeDescriptor.slotHeaderAllocationSize;
+AutoDiffContextAllocator *swift::swift_autoDiffContextAllocatorCreate() {
+  auto *buffer = (AutoDiffContextAllocator *)swift_slowAlloc(
+      sizeof(AutoDiffContextAllocator), alignof(AutoDiffContextAllocator) - 1);
+  return new (buffer) AutoDiffContextAllocator;
 }
 
-void *AutoDiffTapeManager::pop(size_t tapeID) {
-  auto &tapeDescriptor = getTapeDescriptor(tapeID);
-  auto *last = tapeDescriptor.last;
-  tapeDescriptor.last = last->previous;
-  return reinterpret_cast<uint8_t *>(last) +
-      tapeDescriptor.slotHeaderAllocationSize;
-}
-
-AutoDiffTapeManager *swift::swift_autodiff_tape_manager_create() {
-  auto *buffer = (AutoDiffTapeManager *)swift_slowAlloc(
-      sizeof(AutoDiffTapeManager), alignof(AutoDiffTapeManager) - 1);
-  return new (buffer) AutoDiffTapeManager;
-}
-
-size_t swift::swift_autodiff_tape_create(AutoDiffTapeManager *manager,
-                                         const Metadata *elementType) {
-  return manager->createTape(elementType);
-}
-
-void *swift::swift_autodiff_tape_allocate(AutoDiffTapeManager *manager,
-                                          size_t tapeID) {
-  return manager->allocate(tapeID);
-}
-
-void *swift::swift_autodiff_tape_pop(AutoDiffTapeManager *manager,
-                                     size_t tapeID) {
-  return manager->pop(tapeID);
+void *swift::swift_autoDiffContextAllocate(
+    AutoDiffContextAllocator *allocator, const Metadata *linearMapStructType) {
+  return allocator->allocate(linearMapStructType);
 }

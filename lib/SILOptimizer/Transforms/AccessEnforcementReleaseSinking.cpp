@@ -141,9 +141,7 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::COWBufferForReading:
     case BuiltinValueKind::IntInstrprofIncrement:
     case BuiltinValueKind::GetCurrentAsyncTask:
-    case BuiltinValueKind::AutoDiffTapeManagerCreate:
-    case BuiltinValueKind::AutoDiffTapeCreate:
-    case BuiltinValueKind::AutoDiffTapeAllocate:
+    case BuiltinValueKind::AutoDiffContextAllocatorCreate:
       return false;
 
     // Handle some rare builtins that may be sensitive to object lifetime
@@ -171,6 +169,7 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::CancelAsyncTask:
     case BuiltinValueKind::CreateAsyncTask:
     case BuiltinValueKind::CreateAsyncTaskFuture:
+    case BuiltinValueKind::AutoDiffContextAllocate:
       return true;
     }
   }

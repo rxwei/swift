@@ -1469,44 +1469,30 @@ static ManagedValue emitBuiltinCreateAsyncTaskFuture(
   return SGF.emitManagedRValueWithCleanup(apply);
 }
 
-static ManagedValue emitBuiltinAutoDiffTapeManagerCreate(
+static ManagedValue emitBuiltinAutoDiffContextAllocatorCreate(
     SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
     ArrayRef<ManagedValue> args, SGFContext C) {
   ASTContext &ctx = SGF.getASTContext();
   auto *builtinApply = SGF.B.createBuiltin(
       loc,
       ctx.getIdentifier(
-          getBuiltinName(BuiltinValueKind::AutoDiffTapeManagerCreate)),
+          getBuiltinName(BuiltinValueKind::AutoDiffContextAllocatorCreate)),
       SILType::getNativeObjectType(ctx),
       subs,
       /*args*/ {});
   return SGF.emitManagedRValueWithCleanup(builtinApply);
 }
 
-static ManagedValue emitBuiltinAutoDiffTapeCreate(
+static ManagedValue emitBuiltinAutoDiffContextAllocate(
     SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
     ArrayRef<ManagedValue> args, SGFContext C) {
   ASTContext &ctx = SGF.getASTContext();
   auto *builtinApply = SGF.B.createBuiltin(
       loc,
       ctx.getIdentifier(
-          getBuiltinName(BuiltinValueKind::AutoDiffTapeCreate)),
-      SILType::getBuiltinWordType(ctx),
-      subs,
-      /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
-  return ManagedValue::forUnmanaged(builtinApply);
-}
-
-static ManagedValue emitBuiltinAutoDiffTapeAllocate(
-    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
-    ArrayRef<ManagedValue> args, SGFContext C) {
-  ASTContext &ctx = SGF.getASTContext();
-  auto *builtinApply = SGF.B.createBuiltin(
-      loc,
-      ctx.getIdentifier(
-          getBuiltinName(BuiltinValueKind::AutoDiffTapeAllocate)),
+          getBuiltinName(BuiltinValueKind::AutoDiffContextAllocate)),
       SILType::getRawPointerType(ctx),
-      SubstitutionMap(),
+      subs,
       /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
   return ManagedValue::forUnmanaged(builtinApply);
 }

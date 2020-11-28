@@ -391,12 +391,22 @@ void emitZeroIntoBuffer(SILBuilder &builder, CanType type,
   // %metatype = metatype $T
   auto metatypeType = CanMetatypeType::get(type, MetatypeRepresentation::Thick);
   auto metatype = builder.createMetatype(
-      loc, SILType::getPrimitiveObjectType(metatypeType));
+      loc, SILType::getPrimitiveObjectType(metatypeTypes));
   auto subMap = SubstitutionMap::getProtocolSubstitutions(
       additiveArithmeticProto, type, confRef);
   builder.createApply(loc, getter, subMap, {bufferAccess, metatype},
                       /*isNonThrowing*/ false);
   builder.emitDestroyValueOperation(loc, getter);
+}
+
+SILValue emitMemoryLayoutSize(SILBuilder &builder, SILType type) {
+  auto &ctx = builder.getASTContext();
+  SmallVector<ValueDecl *, 1> memoryLayoutDeclLookupResults;
+  ctx.lookupInSwiftModule("", memoryLayoutDeclLookupResults);
+  assert(memoryLayoutDeclLookupResults.size() == 1);
+  auto *memoryLayoutDecl =
+      cast<NominalTypeDecl>(memoryLayoutDeclLookupResults.front());
+
 }
 
 //===----------------------------------------------------------------------===//

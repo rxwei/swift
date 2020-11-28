@@ -4582,30 +4582,20 @@ void irgen::emitAsyncReturn(IRGenFunction &IGF, AsyncContextLayout &asyncLayout,
   call->setTailCall();
 }
 
-Address irgen::emitAutoDiffTapeManagerCreate(IRGenFunction &IGF) {
+Address irgen::emitAutoDiffContextAllocatorCreate(IRGenFunction &IGF) {
   auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffTapeManagerCreateFn(), {});
+      IGF.IGM.getAutoDiffContextAllocatorCreateFn(), {});
   call->setDoesNotThrow();
   call->setCallingConv(IGF.IGM.SwiftCC);
   return Address(call, IGF.IGM.getPointerAlignment());
 }
 
-llvm::Value *irgen::emitAutoDiffTapeCreate(IRGenFunction &IGF,
-                                           Address tapeManager,
+Address irgen::emitAutoDiffContextAllocate(IRGenFunction &IGF,
+                                           Address contextAllocator,
                                            Address typeMetadata) {
   auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffTapeCreateFn(),
-      {tapeManager.getAddress(), typeMetadata.getAddress()});
-  call->setDoesNotThrow();
-  call->setCallingConv(IGF.IGM.SwiftCC);
-  return call;
-}
-
-Address irgen::emitAutoDiffTapeAllocate(IRGenFunction &IGF,
-                                        Address tapeManager,
-                                        llvm::Value *tapeID) {
-  auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffTapeAllocateFn(), {tapeManager.getAddress(), tapeID});
+      IGF.IGM.getAutoDiffContextAllocateFn(),
+      {contextAllocator.getAddress(), typeMetadata.getAddress()});
   call->setDoesNotThrow();
   call->setCallingConv(IGF.IGM.SwiftCC);
   return Address(call, IGF.IGM.getPointerAlignment());

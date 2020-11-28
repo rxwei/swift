@@ -159,18 +159,16 @@ struct ExamplePullbackStruct<T: Differentiable> {
 
 @_silgen_name("test_tape_builtins")
 func test_tape_builtins() {
-  let tapeManager = Builtin.autoDiffTapeManagerCreate()
+  let contextAllocator = Builtin.autoDiffContextAllocatorCreate()
   let pbStruct = ExamplePullbackStruct<Float>(pb0: { $0 })
-  let tapeID = Builtin.autoDiffTapeCreate(tapeManager, type(of: pbStruct))
-  let buffer = UnsafeMutableRawPointer(Builtin.autoDiffTapeAllocate(tapeManager, tapeID))
+  let rawBuffer = Builtin.autoDiffContextAllocate(contextAllocator, type(of: pbStruct))
+  let buffer = UnsafeMutableRawPointer(rawBuffer)
   buffer.storeBytes(of: pbStruct, as: type(of: pbStruct))
 }
 
 // CHECK-LABEL: sil{{.*}}@test_tape_builtins
 // CHECK: bb0:
-// CHECK:   [[TAPE_MGR:%.*]] = builtin "autoDiffTapeManagerCreate"() : $Builtin.NativeObject
-// CHECK:   [[BORROWED_TAPE_MGR:%.*]] = begin_borrow [[TAPE_MGR]] : $Builtin.NativeObject
-// CHECK:   [[TAPE_ID:%.*]] = builtin "autoDiffTapeCreate"<ExamplePullbackStruct<Float>>([[BORROWED_TAPE_MGR]] : $Builtin.NativeObject, {{.*}} : $@thin ExamplePullbackStruct<Float>.Type) : $Builtin.Word
-// CHECK:   [[BORROWED_TAPE_MGR:%.*]] = begin_borrow [[TAPE_MGR]] : $Builtin.NativeObject
-// CHECK:   [[BUF:%.*]] = builtin "autoDiffTapeAllocate"([[BORROWED_TAPE_MGR]] : $Builtin.NativeObject, [[TAPE_ID]] : $Builtin.Word) : $Builtin.RawPointer
-// CHECK:   destroy_value [[TAPE_MGR]]
+// CHECK:   [[ALLOCATOR:%.*]] = builtin "autoDiffContextAllocatorCreate"() : $Builtin.NativeObject
+// CHECK:   [[BORROWED_ALLOCATOR:%.*]] = begin_borrow [[ALLOCATOR]] : $Builtin.NativeObject
+// CHECK:   [[BUF:%.*]] = builtin "autoDiffContextAllocate"<ExamplePullbackStruct<Float>>([[BORROWED_ALLOCATOR]] : $Builtin.NativeObject, {{.*}} : $@thin ExamplePullbackStruct<Float>.Type) : $Builtin.RawPointer
+// CHECK:   destroy_value [[ALLOCATOR]]

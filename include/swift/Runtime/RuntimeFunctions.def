@@ -1518,29 +1518,20 @@ FUNCTION(TaskCreateFutureFunc,
               TaskContinuationFunctionPtrTy, SizeTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
-// AutoDiffTapeManager *swift_autodiff_tape_manager_create();
-FUNCTION(AutoDiffTapeManagerCreate,
-         swift_autodiff_tape_manager_create, SwiftCC,
+// AutoDiffContextAllocator *swift_AutoDiffContextAllocatorCreate();
+FUNCTION(AutoDiffContextAllocatorCreate,
+         swift_autoDiffContextAllocatorCreate, SwiftCC,
          DifferentiationAvailability,
          RETURNS(RefCountedPtrTy),
          ARGS(),
          ATTRS(NoUnwind, ArgMemOnly))
 
-// size_t swift_autodiff_tape_create(AutoDiffTapeManager *,
-//                                   const Metadata *elementType);
-FUNCTION(AutoDiffTapeCreate,
-         swift_autodiff_tape_create, SwiftCC,
-         DifferentiationAvailability,
-         RETURNS(SizeTy),
-         ARGS(RefCountedPtrTy, TypeMetadataPtrTy),
-         ATTRS(NoUnwind, ArgMemOnly))
-
-// void *swift_autodiff_tape_allocate(AutoDiffTapeManager *, size_t tapeIndex);
-FUNCTION(AutoDiffTapeAllocate,
-         swift_autodiff_tape_allocate, SwiftCC,
+// void *swift_AutoDiffContextAllocate(AutoDiffContextAllocator *, size_t tapeIndex);
+FUNCTION(AutoDiffContextAllocate,
+         swift_autoDiffContextAllocate, SwiftCC,
          DifferentiationAvailability,
          RETURNS(Int8PtrTy),
-         ARGS(RefCountedPtrTy, SizeTy),
+         ARGS(RefCountedPtrTy, SizeTy, SizeTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
 #undef RETURNS

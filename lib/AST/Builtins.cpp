@@ -1383,23 +1383,17 @@ static ValueDecl *getCreateAsyncTaskFuture(ASTContext &ctx, Identifier id) {
   return builder.build(id);
 }
 
-static ValueDecl *getAutoDiffTapeManagerCreate(ASTContext &ctx, Identifier id) {
+static ValueDecl *getAutoDiffContextAllocatorCreate(ASTContext &ctx, Identifier id) {
   return getBuiltinFunction(id, {}, ctx.TheNativeObjectType);
 }
 
-static ValueDecl *getAutoDiffTapeCreate(ASTContext &ctx, Identifier id) {
+static ValueDecl *getAutoDiffContextAllocate(ASTContext &ctx, Identifier id) {
   BuiltinFunctionBuilder builder(ctx);
   builder.addParameter(makeConcrete(ctx.TheNativeObjectType));
-  builder.addParameter(makeMetatype(makeGenericParam(0)));
-  builder.setResult(makeConcrete(BuiltinIntegerType::getWordType(ctx)));
+  builder.addParameter(makeConcrete(BuiltinIntegerType::getWordType(ctx)));
+  builder.addParameter(makeConcrete(BuiltinIntegerType::getWordType(ctx)));
+  builder.setResult(makeConcrete(ctx.TheRawPointerType));
   return builder.build(id);
-}
-
-static ValueDecl *getAutoDiffTapeAllocate(ASTContext &ctx, Identifier id) {
-  return getBuiltinFunction(
-      id,
-      {ctx.TheNativeObjectType, BuiltinIntegerType::getWordType(ctx)},
-      ctx.TheRawPointerType);
 }
 
 static ValueDecl *getPoundAssert(ASTContext &Context, Identifier Id) {
@@ -2569,14 +2563,11 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
   case BuiltinValueKind::TriggerFallbackDiagnostic:
     return getTriggerFallbackDiagnosticOperation(Context, Id);
 
-  case BuiltinValueKind::AutoDiffTapeManagerCreate:
-    return getAutoDiffTapeManagerCreate(Context, Id);
+  case BuiltinValueKind::AutoDiffContextAllocatorCreate:
+    return getAutoDiffContextAllocatorCreate(Context, Id);
 
-  case BuiltinValueKind::AutoDiffTapeCreate:
-    return getAutoDiffTapeCreate(Context, Id);
-
-  case BuiltinValueKind::AutoDiffTapeAllocate:
-    return getAutoDiffTapeAllocate(Context, Id);
+  case BuiltinValueKind::AutoDiffContextAllocate:
+    return getAutoDiffContextAllocate(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

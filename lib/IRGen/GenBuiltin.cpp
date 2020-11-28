@@ -1115,25 +1115,19 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     return;
   }
 
-  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeManagerCreate) {
-    out.add(emitAutoDiffTapeManagerCreate(IGF).getAddress());
+  if (Builtin.ID == BuiltinValueKind::AutoDiffContextAllocatorCreate) {
+    out.add(emitAutoDiffContextAllocatorCreate(IGF).getAddress());
     return;
   }
 
-  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeCreate) {
-    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
+  if (Builtin.ID == BuiltinValueKind::AutoDiffContextAllocate) {
+    Address allocatorAddr(args.claimNext(), IGF.IGM.getPointerAlignment());
     auto loweredType = getLoweredTypeAndTypeInfo(
         IGF.IGM, substitutions.getReplacementTypes()[0]).first;
     auto *typeMetadata = IGF.emitTypeMetadataRefForLayout(loweredType);
     Address typeMetadataAddr(typeMetadata, IGF.IGM.getTypeMetadataAlignment());
-    out.add(emitAutoDiffTapeCreate(IGF, tapeMgr, typeMetadataAddr));
-    return;
-  }
-
-  if (Builtin.ID == BuiltinValueKind::AutoDiffTapeAllocate) {
-    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
-    auto *tapeID = args.claimNext();
-    out.add(emitAutoDiffTapeAllocate(IGF, tapeMgr, tapeID).getAddress());
+    out.add(emitAutoDiffContextAllocate(
+        IGF, allocatorAddr, typeMetadataAddr).getAddress());
     return;
   }
 
