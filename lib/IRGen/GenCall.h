@@ -440,9 +440,6 @@ namespace irgen {
   Address emitAutoDiffTapeAllocate(IRGenFunction &IGF,
                                    Address tapeManager,
                                    llvm::Value *tapeID);
-  Address emitAutoDiffTapePop(IRGenFunction &IGF,
-                              Address tapeManager,
-                              llvm::Value *tapeID);
 } // end namespace irgen
 } // end namespace swift
 

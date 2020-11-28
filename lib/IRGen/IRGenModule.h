@@ -735,7 +735,6 @@ public:
   llvm::PointerType *TaskContinuationFunctionPtrTy;
   llvm::StructType *AsyncTaskAndContextTy;
   llvm::StructType *DifferentiabilityWitnessTy; // { i8*, i8* }
-  llvm::PointerType *AutoDiffTapeManagerPtrTy; // swift.autodiff_tape_mgr*
 
   llvm::GlobalVariable *TheTrivialPropertyDescriptor = nullptr;
 

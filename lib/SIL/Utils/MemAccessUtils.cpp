@@ -1805,6 +1805,8 @@ static void visitBuiltinAddress(BuiltinInst *builtin,
     case BuiltinValueKind::CancelAsyncTask:
     case BuiltinValueKind::CreateAsyncTask:
     case BuiltinValueKind::CreateAsyncTaskFuture:
+    case BuiltinValueKind::AutoDiffTapeCreate:
+    case BuiltinValueKind::AutoDiffTapeAllocate:
       return;
 
     // General memory access to a pointer in first operand position.

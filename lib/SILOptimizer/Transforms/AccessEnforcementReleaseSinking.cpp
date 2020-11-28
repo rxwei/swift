@@ -144,7 +144,6 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::AutoDiffTapeManagerCreate:
     case BuiltinValueKind::AutoDiffTapeCreate:
     case BuiltinValueKind::AutoDiffTapeAllocate:
-    case BuiltinValueKind::AutoDiffTapePop:
       return false;
 
     // Handle some rare builtins that may be sensitive to object lifetime

@@ -1402,13 +1402,6 @@ static ValueDecl *getAutoDiffTapeAllocate(ASTContext &ctx, Identifier id) {
       ctx.TheRawPointerType);
 }
 
-static ValueDecl *getAutoDiffTapePop(ASTContext &ctx, Identifier id) {
-  return getBuiltinFunction(
-      id,
-      {ctx.TheNativeObjectType, BuiltinIntegerType::getWordType(ctx)},
-      ctx.TheRawPointerType);
-}
-
 static ValueDecl *getPoundAssert(ASTContext &Context, Identifier Id) {
   auto int1Type = BuiltinIntegerType::get(1, Context);
   auto optionalRawPointerType = BoundGenericEnumType::get(
@@ -2584,9 +2577,6 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
 
   case BuiltinValueKind::AutoDiffTapeAllocate:
     return getAutoDiffTapeAllocate(Context, Id);
-
-  case BuiltinValueKind::AutoDiffTapePop:
-    return getAutoDiffTapePop(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

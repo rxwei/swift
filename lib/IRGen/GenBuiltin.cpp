@@ -1137,12 +1137,5 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     return;
   }
 
-  if (Builtin.ID == BuiltinValueKind::AutoDiffTapePop) {
-    Address tapeMgr(args.claimNext(), IGF.IGM.getPointerAlignment());
-    auto *tapeID = args.claimNext();
-    out.add(emitAutoDiffTapePop(IGF, tapeMgr, tapeID).getAddress());
-    return;
-  }
-
   llvm_unreachable("IRGen unimplemented for this builtin!");
 }

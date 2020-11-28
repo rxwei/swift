@@ -4610,13 +4610,3 @@ Address irgen::emitAutoDiffTapeAllocate(IRGenFunction &IGF,
   call->setCallingConv(IGF.IGM.SwiftCC);
   return Address(call, IGF.IGM.getPointerAlignment());
 }
-
-Address irgen::emitAutoDiffTapePop(IRGenFunction &IGF,
-                                   Address tapeManager,
-                                   llvm::Value *tapeID) {
-  auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffTapePopFn(), {tapeManager.getAddress(), tapeID});
-  call->setDoesNotThrow();
-  call->setCallingConv(IGF.IGM.SwiftCC);
-  return Address(call, IGF.IGM.getPointerAlignment());
-}

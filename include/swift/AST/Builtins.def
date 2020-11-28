@@ -761,9 +761,6 @@ BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeCreate, "autoDiffTapeCreate", "",
 // autoDiffTapeAllocate: (Builtin.NativeObject, Builtin.Word) -> Builtin.RawPointer
 BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapeAllocate, "autoDiffTapeAllocate", "", Special)
 
-// autoDiffTapePop: (Builtin.NativeObject, Builtin.Word) -> Builtin.RawPointer
-BUILTIN_MISC_OPERATION_WITH_SILGEN(AutoDiffTapePop, "autoDiffTapePop", "", Special)
-
 #undef BUILTIN_MISC_OPERATION_WITH_SILGEN
 
 #undef BUILTIN_MISC_OPERATION

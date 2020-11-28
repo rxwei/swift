@@ -130,8 +130,8 @@ private:
   /// The seed arguments of the pullback function.
   SmallVector<SILArgument *, 4> seeds;
 
-  /// The tape manager argument, if any.
-  SILArgument *tapeManagerValue = nullptr;
+  /// The tape manager value, if any.
+  SILValue tapeManagerValue = nullptr;
 
   llvm::BumpPtrAllocator allocator;
 
@@ -1898,6 +1898,7 @@ bool PullbackCloner::Implementation::run() {
     if (origBB == origExit) {
       assert(pullbackBB->isEntry());
       createEntryArguments(&pullback);
+      builder.setInsertionPoint(pullbackBB);
       // Obtain the tape manager, if any.
       if (getPullbackInfo().hasLoops()) {
         // The second-from-last argument is the tape manager value which has
@@ -1911,7 +1912,7 @@ bool PullbackCloner::Implementation::run() {
       auto *mainPullbackStruct = pullbackBB->getArguments().back();
       assert(mainPullbackStruct->getType() == pbStructLoweredType);
       pullbackStructArguments[origBB] = mainPullbackStruct;
-      builder.setInsertionPoint(pullbackBB);
+
       auto *dsi = builder.createDestructureStruct(pbLoc, mainPullbackStruct);
       initializePullbackStructElements(origBB, dsi->getResults());
       continue;
@@ -2046,10 +2047,6 @@ bool PullbackCloner::Implementation::run() {
   auto *origEntry = getOriginal().getEntryBlock();
   auto *pbExit = getPullbackBlock(origEntry);
   builder.setInsertionPoint(pbExit);
-
-  // Destroy the tape manager, if any, now that all uses are done.
-  if (tapeManagerValue)
-    builder.createDestroyValue(pbLoc, tapeManagerValue);
 
   // This vector will contain all the materialized return elements.
   SmallVector<SILValue, 8> retElts;
@@ -2351,7 +2348,7 @@ SILBasicBlock *PullbackCloner::Implementation::buildPullbackSuccessor(
     assert(pullbackTrampolineBBArg->getType() ==
                SILType::getRawPointerType(getASTContext()));
     auto pbStructType =
-        getPullbackInfo().getLinearMapStructLoweredType(origPredBB);
+        remapType(getPullbackInfo().getLinearMapStructLoweredType(origPredBB));
     auto predPbStructAddr = pullbackTrampolineBBBuilder.createPointerToAddress(
         loc, pullbackTrampolineBBArg, pbStructType.getAddressType(),
         /*isStrict*/ true);
