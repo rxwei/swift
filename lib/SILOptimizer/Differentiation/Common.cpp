@@ -414,18 +414,20 @@ SILValue emitMemoryLayoutSize(
       {metatypeVal});
 }
 
-SILValue emitProjectTopLevelSubcontext(
-    SILBuilder &builder, SILLocation loc, SILValue context,
-    SILType subcontextType) {
-  assert(context.getOwnershipKind() == OwnershipKind::Guaranteed);
+SILValue emitProjectSubcontextBuffer(
+    SILBuilder &builder, SILLocation loc, SILValue subcontextObject,
+    SILType subcontextContentType) {
+  assert(subcontextObject.getOwnershipKind() == OwnershipKind::Guaranteed);
   auto &ctx = builder.getASTContext();
   auto id = ctx.getIdentifier(
-      getBuiltinName(BuiltinValueKind::AutoDiffProjectTopLevelSubcontext));
-  assert(context->getType() == SILType::getNativeObjectType(ctx));
+      getBuiltinName(BuiltinValueKind::AutoDiffProjectSubcontextBuffer));
+  assert(subcontextObject->getType() == SILType::getNativeObjectType(ctx));
   auto *subcontextAddr = builder.createBuiltin(
-      loc, id, SILType::getRawPointerType(ctx), SubstitutionMap(), {context});
+      loc, id, SILType::getRawPointerType(ctx), SubstitutionMap(),
+      {subcontextObject});
   return builder.createPointerToAddress(
-      loc, subcontextAddr, subcontextType.getAddressType(), /*isStrict*/ true);
+      loc, subcontextAddr, subcontextContentType.getAddressType(),
+      /*isStrict*/ true);
 }
 
 //===----------------------------------------------------------------------===//

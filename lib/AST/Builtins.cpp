@@ -1389,17 +1389,26 @@ static ValueDecl *getAutoDiffCreateLinearMapContext(ASTContext &ctx,
       id, {BuiltinIntegerType::getWordType(ctx)}, ctx.TheNativeObjectType);
 }
 
-static ValueDecl *getAutoDiffProjectTopLevelSubcontext(ASTContext &ctx,
-                                                       Identifier id) {
-  return getBuiltinFunction(
-      id, {ctx.TheNativeObjectType}, ctx.TheRawPointerType);
-}
-
 static ValueDecl *getAutoDiffAllocateSubcontext(ASTContext &ctx,
                                                 Identifier id) {
   return getBuiltinFunction(
       id, {ctx.TheNativeObjectType, BuiltinIntegerType::getWordType(ctx)},
-      ctx.TheRawPointerType);
+      ctx.TheNativeObjectType);
+}
+
+static ValueDecl *getAutoDiffProjectSubcontextBuffer(ASTContext &ctx,
+                                                     Identifier id) {
+  return getBuiltinFunction(
+      id, {ctx.TheNativeObjectType}, ctx.TheRawPointerType);
+}
+
+static ValueDecl *getAutoDiffGetPreviousSubcontext(ASTContext &ctx,
+                                                   Identifier id) {
+  BuiltinFunctionBuilder builder(ctx);
+  builder.addParameter(makeConcrete(ctx.TheNativeObjectType),
+                       ValueOwnership::Owned);
+  builder.setResult(makeConcrete(ctx.TheNativeObjectType));
+  return builder.build(id);
 }
 
 static ValueDecl *getPoundAssert(ASTContext &Context, Identifier Id) {
@@ -2572,11 +2581,14 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
   case BuiltinValueKind::AutoDiffCreateLinearMapContext:
     return getAutoDiffCreateLinearMapContext(Context, Id);
 
-  case BuiltinValueKind::AutoDiffProjectTopLevelSubcontext:
-    return getAutoDiffProjectTopLevelSubcontext(Context, Id);
-
   case BuiltinValueKind::AutoDiffAllocateSubcontext:
     return getAutoDiffAllocateSubcontext(Context, Id);
+
+  case BuiltinValueKind::AutoDiffProjectSubcontextBuffer:
+    return getAutoDiffProjectSubcontextBuffer(Context, Id);
+
+  case BuiltinValueKind::AutoDiffGetPreviousSubcontext:
+    return getAutoDiffGetPreviousSubcontext(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

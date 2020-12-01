@@ -197,8 +197,8 @@ void emitZeroIntoBuffer(SILBuilder &builder, CanType type,
 SILValue emitMemoryLayoutSize(
     SILBuilder &builder, SILLocation loc, CanType type);
 
-/// Emit a projection of the top-level subcontext from the context object.
-SILValue emitProjectTopLevelSubcontext(
+/// Emit a projection of the subcontext's buffer.
+SILValue emitProjectSubcontextBuffer(
     SILBuilder &builder, SILLocation loc, SILValue context,
     SILType subcontextType);
 

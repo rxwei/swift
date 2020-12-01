@@ -1526,20 +1526,28 @@ FUNCTION(AutoDiffCreateLinearMapContext,
          ARGS(SizeTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
-// void *swift_autoDiffProjectTopLevelSubcontext(AutoDiffLinearMapContext *);
-FUNCTION(AutoDiffProjectTopLevelSubcontext,
-         swift_autoDiffProjectTopLevelSubcontext, SwiftCC,
+// AutoDiffSubcontext *swift_autoDiffAllocateSubcontext(AutoDiffLinearMapContext *, size_t);
+FUNCTION(AutoDiffAllocateSubcontext,
+         swift_autoDiffAllocateSubcontext, SwiftCC,
+         DifferentiationAvailability,
+         RETURNS(RefCountedPtrTy),
+         ARGS(RefCountedPtrTy, SizeTy),
+         ATTRS(NoUnwind, ArgMemOnly))
+
+// void *swift_autoDiffProjectSubcontextBuffer(AutoDiffSubcontext *);
+FUNCTION(AutoDiffProjectSubcontextBuffer,
+         swift_autoDiffProjectSubcontextBuffer, SwiftCC,
          DifferentiationAvailability,
          RETURNS(Int8PtrTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
-// void *swift_autoDiffAllocateSubcontext(AutoDiffLinearMapContext *, size_t);
-FUNCTION(AutoDiffAllocateSubcontext,
-         swift_autoDiffAllocateSubcontext, SwiftCC,
+// AutoDiffSubcontext *swift_autoDiffGetPreviousSubcontext(AutoDiffSubcontext *);
+FUNCTION(AutoDiffGetPreviousSubcontext,
+         swift_autoDiffGetPreviousSubcontext, SwiftCC,
          DifferentiationAvailability,
-         RETURNS(Int8PtrTy),
-         ARGS(RefCountedPtrTy, SizeTy),
+         RETURNS(RefCountedPtrTy),
+         ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind, ArgMemOnly))
 
 #undef RETURNS

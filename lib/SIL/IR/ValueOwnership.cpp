@@ -546,8 +546,9 @@ CONSTANT_OWNERSHIP_BUILTIN(None, CancelAsyncTask)
 CONSTANT_OWNERSHIP_BUILTIN(Owned, CreateAsyncTask)
 CONSTANT_OWNERSHIP_BUILTIN(Owned, CreateAsyncTaskFuture)
 CONSTANT_OWNERSHIP_BUILTIN(Owned, AutoDiffCreateLinearMapContext)
-CONSTANT_OWNERSHIP_BUILTIN(None, AutoDiffProjectTopLevelSubcontext)
-CONSTANT_OWNERSHIP_BUILTIN(None, AutoDiffAllocateSubcontext)
+CONSTANT_OWNERSHIP_BUILTIN(Owned, AutoDiffAllocateSubcontext)
+CONSTANT_OWNERSHIP_BUILTIN(None, AutoDiffProjectSubcontextBuffer)
+CONSTANT_OWNERSHIP_BUILTIN(Owned, AutoDiffGetPreviousSubcontext)
 
 #undef CONSTANT_OWNERSHIP_BUILTIN
 

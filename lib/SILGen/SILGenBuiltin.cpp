@@ -1476,20 +1476,6 @@ static ManagedValue emitBuiltinAutoDiffCreateLinearMapContext(
   return SGF.emitManagedRValueWithCleanup(builtinApply);
 }
 
-static ManagedValue emitBuiltinAutoDiffProjectTopLevelSubcontext(
-    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
-    ArrayRef<ManagedValue> args, SGFContext C) {
-  ASTContext &ctx = SGF.getASTContext();
-  auto *builtinApply = SGF.B.createBuiltin(
-      loc,
-      ctx.getIdentifier(
-          getBuiltinName(BuiltinValueKind::AutoDiffProjectTopLevelSubcontext)),
-      SILType::getRawPointerType(ctx),
-      subs,
-      /*args*/ {args[0].borrow(SGF, loc).getValue()});
-  return ManagedValue::forUnmanaged(builtinApply);
-}
-
 static ManagedValue emitBuiltinAutoDiffAllocateSubcontext(
     SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
     ArrayRef<ManagedValue> args, SGFContext C) {
@@ -1498,10 +1484,38 @@ static ManagedValue emitBuiltinAutoDiffAllocateSubcontext(
       loc,
       ctx.getIdentifier(
           getBuiltinName(BuiltinValueKind::AutoDiffAllocateSubcontext)),
-      SILType::getRawPointerType(ctx),
+      SILType::getNativeObjectType(ctx),
       subs,
       /*args*/ {args[0].borrow(SGF, loc).getValue(), args[1].getValue()});
+  return SGF.emitManagedRValueWithCleanup(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffProjectSubcontextBuffer(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffProjectSubcontextBuffer)),
+      SILType::getRawPointerType(ctx),
+      subs,
+      /*args*/ {args[0].borrow(SGF, loc).getValue()});
   return ManagedValue::forUnmanaged(builtinApply);
+}
+
+static ManagedValue emitBuiltinAutoDiffGetPreviousSubcontext(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto *builtinApply = SGF.B.createBuiltin(
+      loc,
+      ctx.getIdentifier(
+          getBuiltinName(BuiltinValueKind::AutoDiffGetPreviousSubcontext)),
+      SILType::getNativeObjectType(ctx),
+      subs,
+      /*args*/ {args[0].forward(SGF)});
+  return SGF.emitManagedRValueWithCleanup(builtinApply);
 }
 
 Optional<SpecializedEmitter>

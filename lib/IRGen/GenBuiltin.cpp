@@ -1116,16 +1116,9 @@ if (Builtin.ID == BuiltinValueKind::id) { \
   }
 
   if (Builtin.ID == BuiltinValueKind::AutoDiffCreateLinearMapContext) {
-    auto topLevelSubcontextSize = args.claimNext();
-    out.add(emitAutoDiffCreateLinearMapContext(IGF, topLevelSubcontextSize)
+    auto reservedCapacity = args.claimNext();
+    out.add(emitAutoDiffCreateLinearMapContext(IGF, reservedCapacity)
                 .getAddress());
-    return;
-  }
-
-  if (Builtin.ID == BuiltinValueKind::AutoDiffProjectTopLevelSubcontext) {
-    Address allocatorAddr(args.claimNext(), IGF.IGM.getPointerAlignment());
-    out.add(
-        emitAutoDiffProjectTopLevelSubcontext(IGF, allocatorAddr).getAddress());
     return;
   }
 
@@ -1134,6 +1127,20 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     auto size = args.claimNext();
     out.add(
         emitAutoDiffAllocateSubcontext(IGF, allocatorAddr, size).getAddress());
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffProjectSubcontextBuffer) {
+    Address allocatorAddr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    out.add(
+        emitAutoDiffProjectSubcontextBuffer(IGF, allocatorAddr).getAddress());
+    return;
+  }
+
+  if (Builtin.ID == BuiltinValueKind::AutoDiffGetPreviousSubcontext) {
+    Address allocatorAddr(args.claimNext(), IGF.IGM.getPointerAlignment());
+    out.add(
+        emitAutoDiffGetPreviousSubcontext(IGF, allocatorAddr).getAddress());
     return;
   }
 

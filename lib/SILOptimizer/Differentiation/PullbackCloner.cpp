@@ -128,7 +128,7 @@ private:
   SmallVector<SILArgument *, 4> seeds;
 
   /// The `AutoDiffLinearMapContext` object, if any.
-  SILValue contextValue = nullptr;
+  SILValue subcontextValue = nullptr;
 
   llvm::BumpPtrAllocator allocator;
 
@@ -1906,27 +1906,22 @@ bool PullbackCloner::Implementation::run() {
       assert(pullbackBB->isEntry());
       createEntryArguments(&pullback);
       builder.setInsertionPoint(pullbackBB);
-      // Obtain the context object, if any, and the top-level subcontext, i.e.
-      // the main pullback struct.
+      // The last argument is the subcontext object (`Builtin.NativeObject`).
+      auto subcontextValue = pullbackBB->getArguments().back();
+      assert(subcontextValue->getType() ==
+             SILType::getNativeObjectType(getASTContext()));
+      // Load the pullback struct and destroy the subcontext.
       SILValue mainPullbackStruct;
-      if (getPullbackInfo().hasLoops()) {
-        // The last argument is the context object (`Builtin.NativeObject`).
-        contextValue = pullbackBB->getArguments().back();
-        assert(contextValue->getType() ==
-               SILType::getNativeObjectType(getASTContext()));
-        // Load the pullback struct.
-        auto subcontextAddr = emitProjectTopLevelSubcontext(
-            builder, pbLoc, contextValue, pbStructLoweredType);
+      builder.emitScopedBorrowOperation(
+          pbLoc, subcontextValue, [&](SILValue borrowed) {
+        auto subcontextBuffer = emitProjectSubcontextBuffer(
+          builder, pbLoc, borrowed, pbStructLoweredType);
         mainPullbackStruct = builder.createLoad(
-            pbLoc, subcontextAddr,
+            pbLoc, subcontextBuffer,
             pbStructLoweredType.isTrivial(getPullback()) ?
                 LoadOwnershipQualifier::Trivial : LoadOwnershipQualifier::Take);
-      } else {
-        // Obtain and destructure pullback struct elements.
-        mainPullbackStruct = pullbackBB->getArguments().back();
-        assert(mainPullbackStruct->getType() == pbStructLoweredType);
-      }
-
+      });
+      builder.createDestroyValue(pbLoc, subcontextValue);
       auto *dsi = builder.createDestructureStruct(pbLoc, mainPullbackStruct);
       initializePullbackStructElements(origBB, dsi->getResults());
       continue;
@@ -2357,17 +2352,21 @@ SILBasicBlock *PullbackCloner::Implementation::buildPullbackSuccessor(
   auto *pullbackTrampolineBBArg = pullbackTrampolineBB->getArguments().front();
   if (vjpCloner.getLoopInfo()->getLoopFor(origPredBB)) {
     assert(pullbackTrampolineBBArg->getType() ==
-               SILType::getRawPointerType(getASTContext()));
+               SILType::getNativeObjectType(getASTContext()));
     auto pbStructType =
         remapType(getPullbackInfo().getLinearMapStructLoweredType(origPredBB));
-    auto predPbStructAddr = pullbackTrampolineBBBuilder.createPointerToAddress(
-        loc, pullbackTrampolineBBArg, pbStructType.getAddressType(),
-        /*isStrict*/ true);
-    auto predPbStructVal = pullbackTrampolineBBBuilder.createLoad(
-        loc, predPbStructAddr,
-        pbStructType.isTrivial(getPullback()) ?
-            LoadOwnershipQualifier::Trivial : LoadOwnershipQualifier::Take);
-    trampolineArguments.push_back(predPbStructVal);
+    pullbackTrampolineBBBuilder.emitScopedBorrowOperation(
+        loc, pullbackTrampolineBBArg, [&](SILValue borrowed) {
+      auto predPbStructAddr = emitProjectSubcontextBuffer(
+          pullbackTrampolineBBBuilder, loc, borrowed, pbStructType);
+      auto predPbStructVal = pullbackTrampolineBBBuilder.createLoad(
+          loc, predPbStructAddr,
+          pbStructType.isTrivial(getPullback()) ?
+              LoadOwnershipQualifier::Trivial : LoadOwnershipQualifier::Take);
+      trampolineArguments.push_back(predPbStructVal);
+    });
+    pullbackTrampolineBBBuilder.createDestroyValue(
+        loc, pullbackTrampolineBBArg);
   } else {
     trampolineArguments.push_back(pullbackTrampolineBBArg);
   }

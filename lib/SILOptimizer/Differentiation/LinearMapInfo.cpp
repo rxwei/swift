@@ -151,11 +151,10 @@ LinearMapInfo::createBranchingTraceDecl(SILBasicBlock *originalBB,
         ParamDecl(loc, loc, Identifier(), loc, Identifier(), moduleDecl);
     decl->setSpecifier(ParamDecl::Specifier::Default);
     // If predecessor block is in a loop, its linear map struct will be
-    // indirectly referenced in memory owned by the context object. The payload
-    // is just a raw pointer.
+    // indirectly referenced in memory owned by an `AutoDiffSubcontext` object.
     if (loopInfo->getLoopFor(predBB)) {
       blocksInLoop.insert(predBB);
-      decl->setInterfaceType(astCtx.TheRawPointerType);
+      decl->setInterfaceType(astCtx.TheNativeObjectType);
     }
     // Otherwise the payload is the linear map struct.
     else {

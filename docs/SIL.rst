@@ -1626,8 +1626,8 @@ based on the key.
 ::
 
   sil_differentiability_witness hidden [parameters 0] [results 0] <T where T : Differentiable> @id : $@convention(thin) (T) -> T {
-    jvp: @id_jvp : $@convention(thin) (T) -> (T, @owned @callee_guaranteed (T.TangentVector) -> T.TangentVector)
-    vjp: @id_vjp : $@convention(thin) (T) -> (T, @owned @callee_guaranteed (T.TangentVector) -> T.TangentVector)
+    jvp: @id_jvp : $@convention(thin) (T, Builtin.NativeObject) -> (T, @owned @callee_guaranteed (T.TangentVector) -> T.TangentVector)
+    vjp: @id_vjp : $@convention(thin) (T, Builtin.NativeObject) -> (T, @owned @callee_guaranteed (T.TangentVector) -> T.TangentVector)
   }
 
 During SILGen, differentiability witnesses are emitted for the following:

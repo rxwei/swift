@@ -10,12 +10,42 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AutoDiffSupport.h"
+#include "swift/Runtime/AutoDiffSupport.h"
+
 #include "swift/ABI/Metadata.h"
 #include "swift/Runtime/HeapObject.h"
 
 using namespace swift;
 using namespace llvm;
+
+SWIFT_CC(swift)
+static void destroySubcontext(SWIFT_CONTEXT HeapObject *obj) {
+  auto *subcontext = static_cast<AutoDiffSubcontext *>(obj);
+  auto *ctx = subcontext->parentContext;
+  subcontext->~AutoDiffSubcontext();
+  ctx->deallocate(subcontext);
+}
+
+/// Heap metadata for a linear map context.
+static FullMetadata<HeapMetadata> subcontextHeapMetadata = {
+  {
+    {
+      &destroySubcontext
+    },
+    {
+      /*value witness table*/ nullptr
+    }
+  },
+  {
+    MetadataKind::Opaque
+  }
+};
+
+AutoDiffSubcontext::AutoDiffSubcontext(AutoDiffSubcontext *const previous,
+                                       size_t size,
+                                       AutoDiffLinearMapContext *parentContext)
+    : HeapObject(&subcontextHeapMetadata), previous(previous), size(size),
+      parentContext(parentContext) {}
 
 SWIFT_CC(swift)
 static void destroyLinearMapContext(SWIFT_CONTEXT HeapObject *obj) {
@@ -42,32 +72,47 @@ AutoDiffLinearMapContext::AutoDiffLinearMapContext()
     : HeapObject(&linearMapContextHeapMetadata) {
 }
 
-void *AutoDiffLinearMapContext::projectTopLevelSubcontext() const {
-  auto offset = alignTo(
-      sizeof(AutoDiffLinearMapContext), alignof(AutoDiffLinearMapContext));
-  return const_cast<uint8_t *>(
-      reinterpret_cast<const uint8_t *>(this) + offset);
+AutoDiffLinearMapContext::~AutoDiffLinearMapContext() {
+  assert(!last && "All subcontexts should have been released");
 }
 
-void *AutoDiffLinearMapContext::allocate(size_t size) {
-  return allocator.Allocate(size, alignof(AutoDiffLinearMapContext));
+AutoDiffSubcontext *AutoDiffLinearMapContext::allocate(size_t size) {
+  auto *buffer = allocator.Allocate(
+      AutoDiffSubcontext::getHeaderStride() + size,
+      alignof(AutoDiffLinearMapContext));
+  swift_retain(this); // Strongly referenced by the subcontext.
+  last = new (buffer) AutoDiffSubcontext(/*previous*/ last, size, this);
+  return last;
+}
+
+void AutoDiffLinearMapContext::deallocate(AutoDiffSubcontext *lastSubcontext) {
+  assert(last == lastSubcontext);
+  last = lastSubcontext->previous;
+  allocator.Deallocate(
+      lastSubcontext, lastSubcontext->size, alignof(AutoDiffSubcontext));
+  swift_release(this);
 }
 
 AutoDiffLinearMapContext *swift::swift_autoDiffCreateLinearMapContext(
-    size_t topLevelLinearMapStructSize) {
+    size_t reservedCapacity) {
   auto allocationSize = alignTo(
       sizeof(AutoDiffLinearMapContext), alignof(AutoDiffLinearMapContext))
-      + topLevelLinearMapStructSize;
+      + reservedCapacity;
   auto *buffer = (AutoDiffLinearMapContext *)malloc(allocationSize);
   return new (buffer) AutoDiffLinearMapContext;
 }
 
-void *swift::swift_autoDiffProjectTopLevelSubcontext(
-    AutoDiffLinearMapContext *allocator) {
-  return allocator->projectTopLevelSubcontext();
+AutoDiffSubcontext *swift::swift_autoDiffAllocateSubcontext(
+    AutoDiffLinearMapContext *context, size_t size) {
+  return context->allocate(size);
 }
 
-void *swift::swift_autoDiffAllocateSubcontext(
-    AutoDiffLinearMapContext *allocator, size_t size) {
-  return allocator->allocate(size);
+void *swift::swift_autoDiffProjectSubcontextBuffer(
+    AutoDiffSubcontext *subcontext) {
+  return subcontext->getTailMemory();
+}
+
+AutoDiffSubcontext *swift::swift_autoDiffGetPreviousSubcontext(
+    AutoDiffSubcontext *subcontext) {
+  return subcontext->previous;
 }

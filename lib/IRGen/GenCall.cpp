@@ -4581,19 +4581,9 @@ IRGenFunction::getFunctionPointerForResumeIntrinsic(llvm::Value *resume) {
 }
 
 Address irgen::emitAutoDiffCreateLinearMapContext(
-    IRGenFunction &IGF, llvm::Value *topLevelSubcontextSize) {
+    IRGenFunction &IGF, llvm::Value *reservedCapacity) {
   auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffCreateLinearMapContextFn(), {topLevelSubcontextSize});
-  call->setDoesNotThrow();
-  call->setCallingConv(IGF.IGM.SwiftCC);
-  return Address(call, IGF.IGM.getPointerAlignment());
-}
-
-Address irgen::emitAutoDiffProjectTopLevelSubcontext(
-    IRGenFunction &IGF, Address context) {
-  auto *call = IGF.Builder.CreateCall(
-      IGF.IGM.getAutoDiffProjectTopLevelSubcontextFn(),
-      {context.getAddress()});
+      IGF.IGM.getAutoDiffCreateLinearMapContextFn(), {reservedCapacity});
   call->setDoesNotThrow();
   call->setCallingConv(IGF.IGM.SwiftCC);
   return Address(call, IGF.IGM.getPointerAlignment());
@@ -4604,6 +4594,26 @@ Address irgen::emitAutoDiffAllocateSubcontext(
   auto *call = IGF.Builder.CreateCall(
       IGF.IGM.getAutoDiffAllocateSubcontextFn(),
       {context.getAddress(), size});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return Address(call, IGF.IGM.getPointerAlignment());
+}
+
+Address irgen::emitAutoDiffProjectSubcontextBuffer(
+    IRGenFunction &IGF, Address subcontext) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffProjectSubcontextBufferFn(),
+      {subcontext.getAddress()});
+  call->setDoesNotThrow();
+  call->setCallingConv(IGF.IGM.SwiftCC);
+  return Address(call, IGF.IGM.getPointerAlignment());
+}
+
+Address irgen::emitAutoDiffGetPreviousSubcontext(
+    IRGenFunction &IGF, Address subcontext) {
+  auto *call = IGF.Builder.CreateCall(
+      IGF.IGM.getAutoDiffGetPreviousSubcontextFn(),
+      {subcontext.getAddress()});
   call->setDoesNotThrow();
   call->setCallingConv(IGF.IGM.SwiftCC);
   return Address(call, IGF.IGM.getPointerAlignment());

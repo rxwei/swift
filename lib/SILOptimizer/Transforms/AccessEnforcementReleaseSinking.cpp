@@ -169,8 +169,9 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::CancelAsyncTask:
     case BuiltinValueKind::CreateAsyncTask:
     case BuiltinValueKind::CreateAsyncTaskFuture:
-    case BuiltinValueKind::AutoDiffProjectTopLevelSubcontext:
     case BuiltinValueKind::AutoDiffAllocateSubcontext:
+    case BuiltinValueKind::AutoDiffProjectSubcontextBuffer:
+    case BuiltinValueKind::AutoDiffGetPreviousSubcontext:
       return true;
     }
   }

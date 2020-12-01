@@ -434,11 +434,13 @@ namespace irgen {
                        CanSILFunctionType fnType);
 
   Address emitAutoDiffCreateLinearMapContext(
-      IRGenFunction &IGF, llvm::Value *topLevelSubcontextSize);
-  Address emitAutoDiffProjectTopLevelSubcontext(
-      IRGenFunction &IGF, Address context);
+      IRGenFunction &IGF, llvm::Value *reservedCapacity);
   Address emitAutoDiffAllocateSubcontext(
       IRGenFunction &IGF, Address context, llvm::Value *size);
+  Address emitAutoDiffProjectSubcontextBuffer(
+      IRGenFunction &IGF, Address subcontext);
+  Address emitAutoDiffGetPreviousSubcontext(
+      IRGenFunction &IGF, Address subcontext);
 } // end namespace irgen
 } // end namespace swift
 

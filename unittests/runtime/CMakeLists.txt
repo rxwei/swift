@@ -70,6 +70,7 @@ if(("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "${SWIFT_PRIMARY_VARIANT_SDK}") AND
 
   add_swift_unittest(SwiftRuntimeTests
     Array.cpp
+    AutoDiffSupport.cpp
     CompatibilityOverride.cpp
     Concurrent.cpp
     Metadata.cpp

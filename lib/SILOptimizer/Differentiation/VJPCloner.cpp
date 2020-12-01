@@ -81,10 +81,6 @@ class VJPCloner::Implementation final
   /// The unique, borrowed context object. This is valid until the exit block.
   SILValue borrowedPullbackContextValue;
 
-  /// The generic signature of the `Builtin.autoDiffAllocateSubcontext(_:_:)`
-  /// declaration. It is used for creating a builtin call.
-  GenericSignature builtinAutoDiffAllocateSubcontextGenericSignature;
-
   bool errorOccurred = false;
 
   /// Mapping from original blocks to pullback values. Used to build pullback
@@ -108,27 +104,21 @@ class VJPCloner::Implementation final
   bool run();
 
   /// Initializes a context object if needed.
-  void emitLinearMapContextInitializationIfNeeded() {
-    if (!pullbackInfo.hasLoops())
-      return;
-    // Get linear map struct size.
-    auto *returnBB = &*original->findReturnBB();
-    auto pullbackStructType =
-        remapType(pullbackInfo.getLinearMapStructLoweredType(returnBB));
+  void emitLinearMapContextInitialization() {
+    auto &ctx = getASTContext();
     Builder.setInsertionPoint(vjp->getEntryBlock());
-    auto topLevelSubcontextSize = emitMemoryLayoutSize(
-        Builder, original->getLocation(), pullbackStructType.getASTType());
-    // Create an context.
+    auto reservedCapacity = Builder.createIntegerLiteral(
+        original->getLocation(), SILType::getBuiltinWordType(ctx), 0);
     pullbackContextValue = Builder.createBuiltin(
         original->getLocation(),
-        getASTContext().getIdentifier(
+        ctx.getIdentifier(
             getBuiltinName(BuiltinValueKind::AutoDiffCreateLinearMapContext)),
-        SILType::getNativeObjectType(getASTContext()),
-        SubstitutionMap(), {topLevelSubcontextSize});
+        SILType::getNativeObjectType(ctx),
+        SubstitutionMap(), {reservedCapacity});
     borrowedPullbackContextValue = Builder.createBeginBorrow(
         original->getLocation(), pullbackContextValue);
     LLVM_DEBUG(getADDebugStream()
-               << "Context object initialized because there are loops\n"
+               << "Context object initialized\n"
                << *vjp->getEntryBlock() << '\n');
   }
 
@@ -138,19 +128,6 @@ class VJPCloner::Implementation final
     Lowering::AbstractionPattern pattern(vjpGenSig,
                                          type->getCanonicalType(vjpGenSig));
     return vjp->getLoweredType(pattern, type);
-  }
-
-  GenericSignature getBuiltinAutoDiffAllocateSubcontextDecl() {
-    if (builtinAutoDiffAllocateSubcontextGenericSignature)
-      return builtinAutoDiffAllocateSubcontextGenericSignature;
-    auto &ctx = getASTContext();
-    auto *decl = cast<FuncDecl>(getBuiltinValueDecl(
-        ctx, ctx.getIdentifier(
-            getBuiltinName(BuiltinValueKind::AutoDiffAllocateSubcontext))));
-    builtinAutoDiffAllocateSubcontextGenericSignature =
-        decl->getGenericSignature();
-    assert(builtinAutoDiffAllocateSubcontextGenericSignature);
-    return builtinAutoDiffAllocateSubcontextGenericSignature;
   }
 
   // Creates a trampoline block for given original terminator instruction, the
@@ -236,24 +213,32 @@ public:
     auto *pullbackRef = Builder.createFunctionRef(loc, pullback);
 
     // Prepare partial application arguments.
-    SILValue partialApplyArg;
-    if (borrowedPullbackContextValue) {
-      // Initialize the top-level subcontext buffer with the top-level pullback
-      // struct.
-      auto addr = emitProjectTopLevelSubcontext(
-          Builder, loc, borrowedPullbackContextValue, pbStructVal->getType());
+    // Allocate and initialize a subcontext buffer with the top-level pullback
+    // struct.
+    auto pbStructSize = emitMemoryLayoutSize(
+        Builder, loc, pbStructVal->getType().getASTType());
+    auto *topLevelSubcontext = Builder.createBuiltin(
+        loc,
+        getASTContext().getIdentifier(
+            getBuiltinName(BuiltinValueKind::AutoDiffAllocateSubcontext)),
+        SILType::getNativeObjectType(getASTContext()),
+        SubstitutionMap(),
+        {borrowedPullbackContextValue, pbStructSize});
+    Builder.emitScopedBorrowOperation(
+        loc, topLevelSubcontext, [&](SILValue borrowed) {
+      auto pbStructAddr = emitProjectSubcontextBuffer(
+          Builder, loc, borrowed, pbStructVal->getType());
       Builder.createStore(
-          loc, pbStructVal, addr,
+          loc, pbStructVal, pbStructAddr,
           pbStructVal->getType().isTrivial(*pullback) ?
               StoreOwnershipQualifier::Trivial : StoreOwnershipQualifier::Init);
-      partialApplyArg = pullbackContextValue;
-      Builder.createEndBorrow(loc, borrowedPullbackContextValue);
-    } else {
-      partialApplyArg = pbStructVal;
-    }
+    });
+    Builder.createEndBorrow(loc, borrowedPullbackContextValue);
+    Builder.createDestroyValue(loc, pullbackContextValue);
 
+    // Create a pullback closure.
     auto *pullbackPartialApply = Builder.createPartialApply(
-        loc, pullbackRef, vjpSubstMap, {partialApplyArg},
+        loc, pullbackRef, vjpSubstMap, {topLevelSubcontext},
         ParameterConvention::Direct_Guaranteed);
     auto pullbackType = vjp->getLoweredFunctionType()
                             ->getResults()
@@ -928,21 +913,11 @@ SILFunction *VJPCloner::Implementation::createEmptyPullback() {
     pbParams.push_back(inoutParamTanParam);
   }
 
-  if (pullbackInfo.hasLoops()) {
-    // Accept a `AutoDiffLinarMapContext` heap object if there are loops.
-    pbParams.push_back({
-      getASTContext().TheNativeObjectType,
-      ParameterConvention::Direct_Guaranteed
-    });
-  } else {
-    // Accept a pullback struct in the pullback parameter list. This is the
-    // returned pullback's closure context.
-    auto *origExit = &*original->findReturnBB();
-    auto *pbStruct = pullbackInfo.getLinearMapStruct(origExit);
-    auto pbStructType =
-    pbStruct->getDeclaredInterfaceType()->getCanonicalType(witnessCanGenSig);
-    pbParams.push_back({pbStructType, ParameterConvention::Direct_Owned});
-  }
+  // Accept a `AutoDiffSubcontext` heap object.
+  pbParams.push_back({
+    getASTContext().TheNativeObjectType,
+    ParameterConvention::Direct_Owned
+  });
 
   // Add pullback results for the requested wrt parameters.
   for (auto i : indices.parameters->getIndices()) {
@@ -1040,27 +1015,29 @@ EnumInst *VJPCloner::Implementation::buildPredecessorEnumValue(
   auto enumEltType = getOpType(enumLoweredTy.getEnumElementType(
       enumEltDecl, getModule(), TypeExpansionContext::minimal()));
   // If the predecessor block is in a loop, its predecessor enum payload is a
-  // `Builtin.RawPointer`.
+  // `Builtin.NativeObject`.
   if (loopInfo->getLoopFor(predBB)) {
-    auto rawPtrType = SILType::getRawPointerType(getASTContext());
-    assert(enumEltType == rawPtrType);
+    auto subcontextType = SILType::getNativeObjectType(getASTContext());
+    assert(enumEltType == subcontextType);
     auto pbStructType = pbStructVal->getType();
     SILValue pbStructSize =
         emitMemoryLayoutSize(Builder, loc, pbStructType.getASTType());
-    auto rawBufferValue = builder.createBuiltin(
+    auto *subcontextValue = builder.createBuiltin(
         loc,
         getASTContext().getIdentifier(
             getBuiltinName(BuiltinValueKind::AutoDiffAllocateSubcontext)),
-        rawPtrType, SubstitutionMap(),
+        subcontextType, SubstitutionMap(),
         {borrowedPullbackContextValue, pbStructSize});
-    auto typedBufferValue = builder.createPointerToAddress(
-        loc, rawBufferValue, pbStructType.getAddressType(),
-        /*isStrict*/ true);
-    builder.createStore(
-        loc, pbStructVal, typedBufferValue,
-        pbStructType.isTrivial(*pullback) ?
-            StoreOwnershipQualifier::Trivial : StoreOwnershipQualifier::Init);
-    return builder.createEnum(loc, rawBufferValue, enumEltDecl, enumLoweredTy);
+    builder.emitScopedBorrowOperation(
+        loc, subcontextValue, [&](SILValue borrowed) {
+      auto buffer = emitProjectSubcontextBuffer(
+          builder, loc, borrowed, pbStructType.getAddressType());
+      builder.createStore(
+          loc, pbStructVal, buffer,
+          pbStructType.isTrivial(*pullback) ?
+              StoreOwnershipQualifier::Trivial : StoreOwnershipQualifier::Init);
+    });
+    return builder.createEnum(loc, subcontextValue, enumEltDecl, enumLoweredTy);
   }
   return builder.createEnum(loc, pbStructVal, enumEltDecl, enumLoweredTy);
 }
@@ -1074,7 +1051,7 @@ bool VJPCloner::Implementation::run() {
   auto *entry = vjp->createBasicBlock();
   createEntryArguments(vjp);
 
-  emitLinearMapContextInitializationIfNeeded();
+  emitLinearMapContextInitialization();
 
   // Clone.
   SmallVector<SILValue, 4> entryArgs(entry->getArguments().begin(),
