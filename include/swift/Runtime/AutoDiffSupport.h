@@ -51,6 +51,8 @@ class AutoDiffLinearMapContext : public HeapObject {
 private:
   /// The last allocated subcontext.
   AutoDiffSubcontext *last = nullptr;
+  /// The number of allocated subcontexts.
+  size_t numAllocatedSubcontexts;
   /// The underlying allocator.
   // TODO: Use a custom allocator so that the initial slab can be tail-allocated
   // and slabs can be deallocated in a stack discipline.

@@ -21,9 +21,7 @@ using namespace llvm;
 SWIFT_CC(swift)
 static void destroySubcontext(SWIFT_CONTEXT HeapObject *obj) {
   auto *subcontext = static_cast<AutoDiffSubcontext *>(obj);
-  auto *ctx = subcontext->parentContext;
-  subcontext->~AutoDiffSubcontext();
-  ctx->deallocate(subcontext);
+  subcontext->parentContext->deallocate(subcontext);
 }
 
 /// Heap metadata for a linear map context.
@@ -82,15 +80,21 @@ AutoDiffSubcontext *AutoDiffLinearMapContext::allocate(size_t size) {
       alignof(AutoDiffLinearMapContext));
   swift_retain(this); // Strongly referenced by the subcontext.
   last = new (buffer) AutoDiffSubcontext(/*previous*/ last, size, this);
+  ++numAllocatedSubcontexts;
+  printf("New subcontext %lx; previous last %lx; total: %zu\n", (long)last, (long)last->previous, numAllocatedSubcontexts);
   return last;
 }
 
 void AutoDiffLinearMapContext::deallocate(AutoDiffSubcontext *lastSubcontext) {
+  printf("Deallocating %lx...; current last %lx\n", (long)lastSubcontext, (long)last);
   assert(last == lastSubcontext);
   last = lastSubcontext->previous;
+  lastSubcontext->~AutoDiffSubcontext();
   allocator.Deallocate(
       lastSubcontext, lastSubcontext->size, alignof(AutoDiffSubcontext));
   swift_release(this);
+  --numAllocatedSubcontexts;
+  printf("Deallocated subcontext %lx; current last %lx; total: %zu\n", (long)lastSubcontext, (long)last, numAllocatedSubcontexts);
 }
 
 AutoDiffLinearMapContext *swift::swift_autoDiffCreateLinearMapContext(
@@ -109,6 +113,7 @@ AutoDiffSubcontext *swift::swift_autoDiffAllocateSubcontext(
 
 void *swift::swift_autoDiffProjectSubcontextBuffer(
     AutoDiffSubcontext *subcontext) {
+  printf("retain count of %lx: %d\n", (long)subcontext, (long)swift_retainCount(subcontext));
   return subcontext->getTailMemory();
 }
 
