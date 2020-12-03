@@ -931,14 +931,13 @@ public:
       pullback = reabstractFunction(
           builder, fb, loc, pullback, *applyInfo.originalPullbackType,
           [this](SubstitutionMap subs) -> SubstitutionMap {
-            return this->remapSubstitutionMap(subs);
+            return remapSubstitutionMap(subs);
           });
     }
 
     // Call the callee pullback.
     auto *pullbackCall = builder.createApply(loc, pullback, SubstitutionMap(),
                                              args, /*isNonThrowing*/ false);
-    builder.emitDestroyValueOperation(loc, pullback);
 
     // Extract all results from `pullbackCall`.
     SmallVector<SILValue, 8> dirResults;

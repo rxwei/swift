@@ -255,7 +255,7 @@ public:
 
     auto *pullbackPartialApply = Builder.createPartialApply(
         loc, pullbackRef, vjpSubstMap, {partialApplyArg},
-        ParameterConvention::Direct_Guaranteed);
+        ParameterConvention::Direct_Owned);
     auto pullbackType = vjp->getLoweredFunctionType()
                             ->getResults()
                             .back()
