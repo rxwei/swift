@@ -1157,7 +1157,7 @@ static ManagedValue emitBuiltinAutoDiffApplyDerivativeFunction(
                           /*isNonThrowing*/ false));
     // Reabstract the linear map to `@callee_guaranteed` since that matches the
     // lowered type of AST closure types.
-    linearMap = SGF.getThunkedAutoDiffLinearMap(
+    linearMap = SGF.emitTransformedAutoDiffLinearMap(
         linearMap, kind.getLinearMapKind(), linearMapType,
         calleeGuaranteedLinearMapType, /*reorderSelf*/ false);
     linearMap.forwardInto(
@@ -1179,7 +1179,7 @@ static ManagedValue emitBuiltinAutoDiffApplyDerivativeFunction(
     auto linearMapType = linearMap.getType().getAs<SILFunctionType>();
     // Reabstract the linear map to `@callee_guaranteed` since that matches the
     // lowered type of AST closure types.
-    linearMap = SGF.getThunkedAutoDiffLinearMap(
+    linearMap = SGF.emitTransformedAutoDiffLinearMap(
         linearMap, kind.getLinearMapKind(),
         linearMapType, getCalleeGuaranteedType(linearMapType),
         /*reorderSelf*/ false);
@@ -1270,41 +1270,6 @@ static ManagedValue emitBuiltinApplyTranspose(
   assert(successfullyParsed);
   return emitBuiltinAutoDiffApplyTransposeFunction(
       arity, throws, SGF, loc, substitutions, args, C);
-}
-
-static ManagedValue emitBuiltinDifferentiableFunction(
-    SILGenFunction &SGF, SILLocation loc, SubstitutionMap substitutions,
-    ArrayRef<ManagedValue> args, SGFContext C) {
-  assert(args.size() == 3);
-  auto origFn = args.front();
-  auto origType = origFn.getType().castTo<SILFunctionType>();
-  auto numResults =
-      origType->getNumResults() + origType->getNumIndirectMutatingParameters();
-  auto diffFn = SGF.B.createDifferentiableFunction(
-      loc,
-      IndexSubset::getDefault(SGF.getASTContext(), origType->getNumParameters(),
-                              /*includeAll*/ true),
-      IndexSubset::getDefault(SGF.getASTContext(), numResults,
-                              /*includeAll*/ true),
-      origFn.forward(SGF),
-      std::make_pair(args[1].forward(SGF), args[2].forward(SGF)));
-  return SGF.emitManagedRValueWithCleanup(diffFn);
-}
-
-static ManagedValue emitBuiltinLinearFunction(
-    SILGenFunction &SGF, SILLocation loc, SubstitutionMap substitutions,
-    ArrayRef<ManagedValue> args, SGFContext C) {
-  assert(args.size() == 2);
-  auto origFn = args.front();
-  auto origType = origFn.getType().castTo<SILFunctionType>();
-  auto linearFn = SGF.B.createLinearFunction(
-      loc,
-      IndexSubset::getDefault(
-          SGF.getASTContext(),
-          origType->getNumParameters(),
-          /*includeAll*/ true),
-      origFn.forward(SGF), args[1].forward(SGF));
-  return SGF.emitManagedRValueWithCleanup(linearFn);
 }
 
 /// Emit SIL for the named builtin: globalStringTablePointer. Unlike the default

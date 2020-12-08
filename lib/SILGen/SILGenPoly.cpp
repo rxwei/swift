@@ -3635,7 +3635,7 @@ static SILValue joinElements(ArrayRef<SILValue> elements, SILBuilder &builder,
 }
 
 /// Adapted from `SILGenModule::getOrCreateReabstractionThunk`.
-ManagedValue SILGenFunction::getThunkedAutoDiffLinearMap(
+ManagedValue SILGenFunction::emitTransformedAutoDiffLinearMap(
     ManagedValue linearMap, AutoDiffLinearMapKind linearMapKind,
     CanSILFunctionType substFromType, CanSILFunctionType substToType,
     bool reorderSelf) {
@@ -3661,7 +3661,7 @@ ManagedValue SILGenFunction::getThunkedAutoDiffLinearMap(
   std::string name = mangler.mangleReabstractionThunkHelper(
       thunkType, fromInterfaceType, toInterfaceType, Type(),
       getModule().getSwiftModule());
-  // TODO(TF-685): Use principled thunk mangling.
+  // TODO(SR-13508): Use principled thunk mangling.
   switch (linearMapKind) {
   case AutoDiffLinearMapKind::Differential:
     name += "_differential";
@@ -4077,7 +4077,7 @@ SILFunction *SILGenModule::getOrCreateCustomDerivativeThunk(
   auto linearMap = thunkSGF.emitManagedRValueWithCleanup(directResults.back());
   assert(linearMap.getType().castTo<SILFunctionType>() == linearMapFnType);
   auto linearMapKind = kind.getLinearMapKind();
-  linearMap = thunkSGF.getThunkedAutoDiffLinearMap(
+  linearMap = thunkSGF.emitTransformedAutoDiffLinearMap(
       linearMap, linearMapKind, linearMapFnType, targetLinearMapFnType,
       reorderSelf);
   auto typeExpansionContext = thunkSGF.getTypeExpansionContext();

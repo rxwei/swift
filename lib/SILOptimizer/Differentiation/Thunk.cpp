@@ -579,7 +579,7 @@ getOrCreateSubsetParametersThunkForLinearMap(
                                   /*withoutActuallyEscaping*/ true,
                                   DifferentiationThunkKind::Reabstraction);
 
-  // TODO(TF-685): Use more principled mangling for thunks.
+  // TODO(SR-13508): Use more principled mangling for thunks.
   std::string thunkName;
   switch (kind) {
   case AutoDiffDerivativeFunctionKind::JVP:
@@ -866,7 +866,7 @@ getOrCreateSubsetParametersThunkForDerivativeFunction(
                    ->getNameStr();
   }
   assert(!origName.empty() && "Original function name could not be resolved");
-  // TODO(TF-685): Use more principled mangling for thunks.
+  // TODO(SR-13508): Use more principled mangling for thunks.
   std::string thunkName;
   switch (kind) {
   case AutoDiffDerivativeFunctionKind::JVP:

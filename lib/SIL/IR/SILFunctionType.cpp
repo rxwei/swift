@@ -340,9 +340,10 @@ getDifferentiabilityParameters(SILFunctionType *originalFnTy,
 /// `originalResults`. The semantic results are formal results followed by
 /// `inout` parameters, in type order.
 static void
-getSemanticResults(SILFunctionType *functionType, IndexSubset *parameterIndices,
-                   IndexSubset *&inoutParameterIndices,
-                   SmallVectorImpl<SILResultInfo> &originalResults) {
+getAutoDiffSemanticResults(
+    SILFunctionType *functionType, IndexSubset *parameterIndices,
+    IndexSubset *&inoutParameterIndices,
+    SmallVectorImpl<SILResultInfo> &originalResults) {
   auto &C = functionType->getASTContext();
   SmallVector<unsigned, 4> inoutParamIndices;
   // Collect original formal results.
@@ -427,8 +428,8 @@ static CanSILFunctionType getAutoDiffDifferentialType(
 
   IndexSubset *inoutParamIndices;
   SmallVector<SILResultInfo, 2> originalResults;
-  getSemanticResults(originalFnTy, parameterIndices, inoutParamIndices,
-                     originalResults);
+  getAutoDiffSemanticResults(originalFnTy, parameterIndices, inoutParamIndices,
+                             originalResults);
 
   SmallVector<SILParameterInfo, 4> diffParams;
   getDifferentiabilityParameters(originalFnTy, parameterIndices, diffParams);
@@ -524,8 +525,8 @@ static CanSILFunctionType getAutoDiffPullbackType(
 
   IndexSubset *inoutParamIndices;
   SmallVector<SILResultInfo, 2> originalResults;
-  getSemanticResults(originalFnTy, parameterIndices, inoutParamIndices,
-                     originalResults);
+  getAutoDiffSemanticResults(originalFnTy, parameterIndices, inoutParamIndices,
+                             originalResults);
 
   // Given a type, returns its formal SIL parameter info.
   auto getTangentParameterConventionForOriginalResult =
