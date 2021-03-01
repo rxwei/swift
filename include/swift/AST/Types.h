@@ -3556,19 +3556,70 @@ enum class SILParameterDifferentiability : bool {
   NotDifferentiable,
 };
 
+enum class ResultConvention;
+
+class SILParameterDifferentiationInfo {
+private:
+  struct Conventions {
+    ParameterConvention TangentConvention : 8;
+    ResultConvention PullbackResultConvention : 8;
+  }
+  enum class Flags: uint16_t {
+    NoDerivativeOrNotApplicable = 0xffff;
+  }
+  union {
+    Conventions conventions,
+    Flags flags
+  } Value;
+
+  Conventions getConventions() const {
+    assert(!isNoDerivative());
+    return Value.conventions;
+  }
+
+public:
+  SILParameterDifferentiationInfo(ParameterConvention tangentConvention,
+                                  ResultConvention pullbackResultConvention)
+      : Value({tangentConvention, pullbackResultConvnetion}) {}
+  SILParameterDifferentiationInfo()
+      : Value(Flags::NoDerivative) {}
+
+  bool isNoDerivativeOrNotApplicable() const {
+    return Value.flags == Flags::NoDerivativeOrNotApplicable;
+  }
+
+  ParameterConvention getTangentConvention() const {
+    return getConventions().TangentConvention;
+  }
+
+  ResultConvention getPullbackResultConvention() const {
+    return getConventions().PullbackResultConvention;
+  }
+}
+
 /// A parameter type and the rules for passing it.
 class SILParameterInfo {
   CanType Type;
   ParameterConvention Convention;
-  SILParameterDifferentiability Differentiability;
+  SILParameterDifferentiationInfo DifferentiationInfo;
 
 public:
   SILParameterInfo() = default;//: Ty(), Convention((ParameterConvention)0) {}
   SILParameterInfo(
       CanType type, ParameterConvention conv,
-      SILParameterDifferentiability differentiability =
-          SILParameterDifferentiability::DifferentiableOrNotApplicable)
-      : Type(type), Convention(conv), Differentiability(differentiability) {
+      SILParameterDifferentiationInfo differentiationInfo
+          = SILParameterDifferentiationInfo())
+      : Type(type), Convention(conv),
+        DifferentiationInfo(differentiationInfo) {
+    assert(type->isLegalSILType() && "SILParameterInfo has illegal SIL type");
+  }
+
+  // TODO: Fade out.
+  SILParameterInfo(
+      CanType type, ParameterConvention conv,
+      SILParameterDifferentiability differentiability)
+      : SILParameterInfo(type, conv, SILParameterDifferentiationInfo()) {
+
     assert(type->isLegalSILType() && "SILParameterInfo has illegal SIL type");
   }
 
@@ -3620,6 +3671,10 @@ public:
   /// directly.
   bool isGuaranteed() const {
     return isGuaranteedParameter(getConvention());
+  }
+
+  bool isNoDerivative() const {
+
   }
 
   SILParameterDifferentiability getDifferentiability() const {
