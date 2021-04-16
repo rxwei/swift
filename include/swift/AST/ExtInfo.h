@@ -923,6 +923,10 @@ public:
     return builder.withAsync(isAsync).build();
   }
 
+  SILExtInfo withDifferentiabilityKind(DifferentiabilityKind diffKind) const {
+    return builder.withDifferentiabilityKind(diffKind).build();
+  }
+
   bool isEqualTo(SILExtInfo other, bool useClangTypes) const {
     return builder.isEqualTo(other.builder, useClangTypes);
   }

@@ -456,6 +456,7 @@ public:
     switch (flags.getDifferentiabilityKind()) {
     case ImplFunctionDifferentiabilityKind::NonDifferentiable:
       diffKind = FunctionMetadataDifferentiabilityKind::NonDifferentiable;
+      assert(!funcFlags.isDifferentiable());
       break;
     case ImplFunctionDifferentiabilityKind::Forward:
       diffKind = FunctionMetadataDifferentiabilityKind::Forward;

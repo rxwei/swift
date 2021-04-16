@@ -2117,7 +2117,10 @@ static CanSILFunctionType getSILFunctionType(
            && "using native Swift async for foreign type!");
     isAsync = true;
   }
-  
+
+  DifferentiabilityKind diffKind =
+      substFnInterfaceType->getExtInfo().getDifferentiabilityKind();
+
   // Map 'throws' to the appropriate error convention.
   if (substFnInterfaceType->getExtInfo().isThrowing()
       && !foreignInfo.Error
@@ -2226,6 +2229,7 @@ static CanSILFunctionType getSILFunctionType(
                         .withIsPseudogeneric(pseudogeneric)
                         .withConcurrent(isSendable)
                         .withAsync(isAsync)
+                        .withDifferentiabilityKind(diffKind)
                         .build();
 
   // Build the substituted generic signature we extracted.

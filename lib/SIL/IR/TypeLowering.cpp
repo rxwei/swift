@@ -2569,6 +2569,7 @@ getFunctionInterfaceTypeWithCaptures(TypeConverter &TC,
                                       funcType->isThrowing())
           .withConcurrent(funcType->isSendable())
           .withAsync(funcType->isAsync())
+          .withDifferentiabilityKind(funcType->getDifferentiabilityKind())
           .build();
 
   return CanAnyFunctionType::get(

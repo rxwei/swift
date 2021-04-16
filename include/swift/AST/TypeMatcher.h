@@ -211,6 +211,10 @@ class TypeMatcher {
         if (firstFunc->isSendable() != secondFunc->isSendable())
           return mismatch(firstFunc.getPointer(), secondFunc, sugaredFirstType);
 
+        if (firstFunc->getDifferentiabilityKind() !=
+            secondFunc->getDifferentiabilityKind())
+          return mismatch(firstFunc.getPointer(), secondFunc, sugaredFirstType);
+
         auto sugaredFirstFunc = sugaredFirstType->castTo<AnyFunctionType>();
         if (firstFunc->getParams().size() != secondFunc->getParams().size())
           return mismatch(firstFunc.getPointer(), secondFunc, sugaredFirstFunc);

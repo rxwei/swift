@@ -663,6 +663,30 @@ public:
     result->addChild(resultTy, Dem);
 
     auto funcNode = Dem.createNode(kind);
+    switch (F->getDifferentiabilityKind().Value) {
+    case FunctionMetadataDifferentiabilityKind::NonDifferentiable:
+      break;
+    case FunctionMetadataDifferentiabilityKind::Forward:
+      funcNode->addChild(Dem.createNode(
+          Node::Kind::DifferentiableFunctionType,
+          (Node::IndexType)MangledDifferentiabilityKind::Forward), Dem);
+      break;
+    case FunctionMetadataDifferentiabilityKind::Reverse:
+      funcNode->addChild(Dem.createNode(
+          Node::Kind::DifferentiableFunctionType,
+          (Node::IndexType)MangledDifferentiabilityKind::Reverse), Dem);
+      break;
+    case FunctionMetadataDifferentiabilityKind::Normal:
+      funcNode->addChild(Dem.createNode(
+          Node::Kind::DifferentiableFunctionType,
+          (Node::IndexType)MangledDifferentiabilityKind::Normal), Dem);
+      break;
+    case FunctionMetadataDifferentiabilityKind::Linear:
+      funcNode->addChild(Dem.createNode(
+          Node::Kind::DifferentiableFunctionType,
+          (Node::IndexType)MangledDifferentiabilityKind::Linear), Dem);
+      break;
+    }
     if (F->getFlags().isThrowing())
       funcNode->addChild(Dem.createNode(Node::Kind::ThrowsAnnotation), Dem);
     if (F->getFlags().isSendable()) {
@@ -716,7 +740,6 @@ public:
 
   Demangle::NodePointer
   visitGenericTypeParameterTypeRef(const GenericTypeParameterTypeRef *GTP) {
-    assert(false && "not tested");
     auto node = Dem.createNode(Node::Kind::DependentGenericParamType);
     node->addChild(Dem.createNode(Node::Kind::Index, GTP->getDepth()), Dem);
     node->addChild(Dem.createNode(Node::Kind::Index, GTP->getIndex()), Dem);

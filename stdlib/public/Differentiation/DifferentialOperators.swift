@@ -68,6 +68,43 @@ public func valueWithPullback<T, U, V, R>(
   return Builtin.applyDerivative_vjp_arity3(f, x, y, z)
 }
 
+
+func foo(x: T) -> T {
+   x = ...
+   for
+      for
+         y = f(x)
+}
+
+// Derivative
+func vjpFoo(x: T) -> (value: T, pullback: (T.Tangent) -> T.Tangent) {
+   ...
+   pb = partial_apply vjpPullback({...context...})
+}
+
+// Pullback
+func pullbackFoo(x: T.Tangent, {...}) -> T.Tangent {
+   ...
+}
+
+func pullback(x: T) -> T {
+   x = ...
+   alloc_stack
+   alloc_stack
+   alloc_stack
+   alloc_stack
+   alloc_stack
+   if {
+
+   }
+   else {
+      y = f(x)
+   }
+   ...
+}
+
+
+
 // Differential
 
 @inlinable

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "swift/Reflection/TypeRefBuilder.h"
+#include "swift/Demangling/TypeDecoder.h"
 #include "swift/Remote/MetadataReader.h"
 #include "gtest/gtest.h"
 
@@ -530,4 +531,34 @@ TEST(TypeRefTest, DeriveSubstitutions) {
   auto ResultTwo = DerivedSubs[{0,1}];
   EXPECT_EQ(SubstOne, ResultOne);
   EXPECT_EQ(SubstTwo, ResultTwo);
+}
+
+TEST(TypeRefTest, FunctionTypeAttributes) {
+  TypeRefBuilder builder(TypeRefBuilder::ForTesting);
+  auto T = builder.createGenericTypeParameterType(0, 0);
+  std::string floatName = "Sf";
+  auto Float = builder.createNominalType(floatName);
+  auto fn = builder.createFunctionType(
+      {T}, T, FunctionTypeFlags().withDifferentiable(true),
+      FunctionMetadataDifferentiabilityKind::Reverse);
+
+  GenericArgumentMap subs;
+  subs[{0, 0}] = Float;
+
+  Demangler demangler;
+  auto fnDemangling = fn->getDemangling(demangler);
+
+  auto mangledFnType = mangleNode(fnDemangling);
+  auto demangledFnType = demangler.demangleType(mangledFnType);
+  llvm::outs() << mangledFnType << '\n';
+
+  TypeDecoder<TypeRefBuilder> decoder(builder);
+  auto decoded = decoder.decodeMangledType(demangledFnType);
+  EXPECT_FALSE(decoded.isError());
+  auto *decodedType = decoded.getType();
+  auto *decodedFnType = dyn_cast<FunctionTypeRef>(decodedType);
+  decodedFnType = cast<FunctionTypeRef>(decodedFnType->subst(builder, subs));
+  EXPECT_TRUE(decodedFnType != nullptr);
+  EXPECT_TRUE(decodedFnType->getFlags().isDifferentiable());
+  EXPECT_TRUE(decodedFnType->getDifferentiabilityKind().Value == FunctionMetadataDifferentiabilityKind::Reverse);
 }
