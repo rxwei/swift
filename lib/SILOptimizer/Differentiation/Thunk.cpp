@@ -604,7 +604,8 @@ getOrCreateSubsetParametersThunkForLinearMap(
   SmallVector<AllocStackInst *, 4> localAllocations;
 
   // Build a `.zero` argument for the given `Differentiable`-conforming type.
-  auto buildZeroArgument = [&](SILType zeroSILType) {
+  auto buildZeroArgument = [&](SILParameterInfo zeroSILParameter) {
+    auto zeroSILType = zeroSILParameter.getSILStorageInterfaceType();
     auto zeroSILObjType = zeroSILType.getObjectType();
     auto zeroType = zeroSILType.getASTType();
     auto *swiftMod = parentThunk->getModule().getSwiftModule();
@@ -618,10 +619,16 @@ getOrCreateSubsetParametersThunkForLinearMap(
       builder.emitZeroIntoBuffer(loc, buf, IsInitialization);
       if (zeroSILType.isAddress()) {
         arguments.push_back(buf);
+        if (zeroSILParameter.isGuaranteed()) {
+          valuesToCleanup.push_back(buf);
+        }
       } else {
         auto arg = builder.emitLoadValueOperation(loc, buf,
                                                   LoadOwnershipQualifier::Take);
         arguments.push_back(arg);
+        if (zeroSILParameter.isGuaranteed()) {
+          valuesToCleanup.push_back(arg);
+        }
       }
       break;
     }
@@ -679,10 +686,9 @@ getOrCreateSubsetParametersThunkForLinearMap(
       }
       // Otherwise, construct and use a zero argument.
       else {
-        auto zeroSILType =
-            linearMapType->getParameters()[mapOriginalParameterIndex(i)]
-                .getSILStorageInterfaceType();
-        buildZeroArgument(zeroSILType);
+        auto zeroSILParameter =
+            linearMapType->getParameters()[mapOriginalParameterIndex(i)];
+        buildZeroArgument(zeroSILParameter);
       }
     }
     break;
